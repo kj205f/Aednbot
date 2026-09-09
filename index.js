@@ -1,4 +1,4 @@
-
+console.log("🚀 index.js بدأ التشغيل");
 
 const {
   Client,
