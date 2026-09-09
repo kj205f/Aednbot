@@ -264,5 +264,5 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 # ====================================
 if __name__ == "__main__":
     # ضع رمز البوت هنا
-    TOKEN = "YOUR_BOT_TOKEN_HERE"
+    TOKEN = ""
     bot.run(TOKEN)
