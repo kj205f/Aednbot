@@ -739,30 +739,3 @@ client.login(TOKEN)
     console.error(error);
 
   });
-  
-  {
-  "Alt-Svc": [
-    "h3=\":443\"; ma=86400"
-  ],
-  "Cf-Cache-Status": [
-    "DYNAMIC"
-  ],
-  "Cf-Ray": [
-    "a3876b77b9bf983d-CMH"
-  ],
-  "Content-Type": [
-    "text/html; charset=utf-8"
-  ],
-  "Date": [
-    "Wed, 09 Sep 2026 16:02:52 GMT"
-  ],
-  "Retry-After": [
-    "5"
-  ],
-  "Server": [
-    "cloudflare"
-  ],
-  "X-Render-Routing": [
-    "hibernate-pending-wake"
-  ]
-}
