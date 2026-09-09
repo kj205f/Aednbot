@@ -235,3 +235,8 @@ with zipfile.ZipFile(zip_path,"w",zipfile.ZIP_DEFLATED) as z:
             z.write(p, os.path.relpath(p, base))
 
 print(zip_path)
+
+import os
+
+token = os.environ.get("DISCORD_TOKEN")
+client_id = os.environ.get("CLIENT_ID")
