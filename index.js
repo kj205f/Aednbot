@@ -37,3 +37,12 @@ client.on('messageCreate', message => {
 
 // تسجيل الدخول باستخدام التوكن المعرف في متغيرات البيئة بـ Render
 client.login(process.env.DISCORD_TOKEN);
+
+async def setup_hook(self):
+    guild = discord.Object(id=GUILD_ID)
+    self.tree.copy_global_to(guild=guild)
+
+    print("⏳ جاري مزامنة أوامر السلاش...")
+    synced = await self.tree.sync(guild=guild)
+
+    print(f"✅ تم مزامنة أوامر السلاش ({len(synced)} أمر)")
