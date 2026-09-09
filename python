@@ -1,0 +1,237 @@
+import os, zipfile, textwrap
+
+base="/mnt/data/AN-BOT"
+os.makedirs(base, exist_ok=True)
+
+files = {
+"package.json": r'''{
+  "name": "an-discord-bot",
+  "version": "1.0.0",
+  "description": "AN Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.2.2"
+  }
+}''',
+
+".env.example": r'''DISCORD_TOKEN=ضع_توكن_البوت_هنا
+CLIENT_ID=ضع_Application_ID_هنا
+GUILD_ID=1441189523689312307
+ALLOWED_ROLE_ID=1441509616151298270
+''',
+
+".gitignore": r'''node_modules/
+.env
+''',
+
+"index.js": r'''require("dotenv").config();
+
+const {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  PermissionFlagsBits
+} = require("discord.js");
+
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID || "1441189523689312307";
+const ALLOWED_ROLE_ID = process.env.ALLOWED_ROLE_ID || "1441509616151298270";
+
+if (!TOKEN || !CLIENT_ID) {
+  console.error("❌ تأكد من وضع DISCORD_TOKEN و CLIENT_ID في ملف .env");
+  process.exit(1);
+}
+
+const commands = [
+  new SlashCommandBuilder()
+    .setName("send")
+    .setDescription("إرسال رسالة خاصة لأعضاء رتبة محددة")
+    .addRoleOption(option =>
+      option.setName("role")
+        .setDescription("الرتبة المستهدفة")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("message")
+        .setDescription("الرسالة التي ستصل للخاص")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("warn")
+    .setDescription("إرسال تحذير لعضو في الخاص")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("العضو")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("reason")
+        .setDescription("سبب التحذير")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("nickname")
+    .setDescription("تغيير اسم عضو داخل السيرفر")
+    .addUserOption(option =>
+      option.setName("user")
+        .setDescription("العضو")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName("name")
+        .setDescription("الاسم الجديد")
+        .setRequired(true)
+    )
+].map(command => command.toJSON());
+
+async function registerCommands() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+  console.log("✅ تم تسجيل أوامر السلاش في السيرفر.");
+}
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
+});
+
+function hasAllowedRole(interaction) {
+  return interaction.member?.roles?.cache?.has(ALLOWED_ROLE_ID);
+}
+
+client.once("ready", () => {
+  console.log(`✅ البوت شغال باسم ${client.user.tag}`);
+});
+
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (!hasAllowedRole(interaction)) {
+    return interaction.reply({
+      content: "❌ ما عندك الرتبة المطلوبة لاستخدام هذا الأمر.",
+      ephemeral: true
+    });
+  }
+
+  try {
+    if (interaction.commandName === "send") {
+      const role = interaction.options.getRole("role");
+      const message = interaction.options.getString("message");
+
+      await interaction.deferReply({ ephemeral: true });
+
+      let sent = 0;
+      let failed = 0;
+
+      const members = await interaction.guild.members.fetch();
+
+      for (const member of members.values()) {
+        if (!member.user.bot && member.roles.cache.has(role.id)) {
+          try {
+            await member.send(
+              `**رسالة من إدارة السيرفر**\n\n${message}`
+            );
+            sent++;
+          } catch {
+            failed++;
+          }
+        }
+      }
+
+      return interaction.editReply(
+        `✅ تم إرسال الرسالة إلى **${sent}** عضو.\n❌ تعذر الإرسال إلى **${failed}** عضو.`
+      );
+    }
+
+    if (interaction.commandName === "warn") {
+      const user = interaction.options.getUser("user");
+      const reason = interaction.options.getString("reason");
+
+      try {
+        await user.send(
+          `⚠️ **تحذير من إدارة السيرفر**\n\n**السيرفر:** ${interaction.guild.name}\n**السبب:** ${reason}`
+        );
+      } catch {
+        return interaction.reply({
+          content: "❌ ما قدرت أرسل التحذير للخاص. قد يكون الخاص مقفلًا.",
+          ephemeral: true
+        });
+      }
+
+      return interaction.reply({
+        content: `✅ تم إرسال التحذير إلى <@${user.id}> في الخاص.`,
+        ephemeral: true
+      });
+    }
+
+    if (interaction.commandName === "nickname") {
+      const user = interaction.options.getUser("user");
+      const newName = interaction.options.getString("name");
+      const member = await interaction.guild.members.fetch(user.id);
+
+      if (!member.manageable) {
+        return interaction.reply({
+          content: "❌ ما أقدر أغير اسم هذا العضو. تأكد من ترتيب رتبة البوت وصلاحياته.",
+          ephemeral: true
+        });
+      }
+
+      await member.setNickname(newName);
+
+      return interaction.reply({
+        content: `✅ تم تغيير اسم <@${user.id}> إلى **${newName}**.`,
+        ephemeral: true
+      });
+    }
+  } catch (error) {
+    console.error(error);
+
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply("❌ حدث خطأ أثناء تنفيذ الأمر.");
+    }
+
+    return interaction.reply({
+      content: "❌ حدث خطأ أثناء تنفيذ الأمر.",
+      ephemeral: true
+    });
+  }
+});
+
+(async () => {
+  try {
+    await registerCommands();
+    await client.login(TOKEN);
+  } catch (error) {
+    console.error("❌ فشل تشغيل البوت:", error);
+  }
+})();
+'''
+}
+
+for rel, content in files.items():
+    path=os.path.join(base, rel)
+    with open(path,"w",encoding="utf-8") as f:
+        f.write(content)
+
+zip_path="/mnt/data/AN-BOT-v1.zip"
+with zipfile.ZipFile(zip_path,"w",zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, fs in os.walk(base):
+        for fn in fs:
+            p=os.path.join(root,fn)
+            z.write(p, os.path.relpath(p, base))
+
+print(zip_path)
