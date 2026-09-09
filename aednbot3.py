@@ -1,5 +1,19 @@
-
-
+# ===================================================
+# بوت ديسكورد - Python (discord.py 2.x)
+# ===================================================
+# التثبيت:
+#   pip install discord.py python-dotenv
+#
+# أنشئ ملف .env بجانب هذا الملف وحط فيه:
+#   DISCORD_TOKEN=توكن البوت
+#   GUILD_ID=آيدي السيرفر اللي راح تسجل فيه الأوامر
+#
+# ملاحظة: لازم تفعّل "Server Members Intent" من بوابة المطورين
+# (Discord Developer Portal > Bot > Privileged Gateway Intents)
+#
+# التشغيل:
+#   python discord_bot.py
+# ===================================================
 
 import os
 import json
@@ -25,7 +39,8 @@ class MyBot(discord.Client):
     async def setup_hook(self):
         guild = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
+        synced = await self.tree.sync(guild=guild)
+        print(f"✅ تم مزامنة أوامر السلاش ({len(synced)} أمر)")
 
 
 client = MyBot()
