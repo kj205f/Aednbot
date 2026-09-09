@@ -67,15 +67,34 @@ function saveWarnings(data) {
 }
 
 // =========================
+// إنشاء أمر إعطاء/إزالة الرتب
+// =========================
+
+function addRoleOptions(command) {
+  command.addRoleOption(option =>
+    option
+      .setName("الرتبة-الأساسية")
+      .setDescription("الرتبة الأساسية")
+      .setRequired(true)
+  );
+
+  for (let i = 1; i <= 19; i++) {
+    command.addRoleOption(option =>
+      option
+        .setName(`رتبة-جانبية-${i}`)
+        .setDescription(`رتبة جانبية ${i}`)
+        .setRequired(false)
+    );
+  }
+
+  return command;
+}
+
+// =========================
 // أوامر السلاش
 // =========================
 
-const commands = [
-
-  // ==========================================
-  // إعطاء رتبة - رتبة أساسية + 19 جانبية
-  // ==========================================
-
+const giveRoleCommand = addRoleOptions(
   new SlashCommandBuilder()
     .setName("اعطاء-رتبة")
     .setDescription("إعطاء عضو حتى 20 رتبة")
@@ -85,99 +104,9 @@ const commands = [
         .setDescription("العضو المستهدف")
         .setRequired(true)
     )
+).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
 
-    .addRoleOption(option =>
-      option
-        .setName("الرتبة-الأساسية")
-        .setDescription("الرتبة الأساسية")
-        .setRequired(true)
-    )
-
-    .addRoleOption(option =>
-      option
-        .setName("رتبة-جانبية-1")
-        .setDescription("رتبة جانبية")
-        .setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-2").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-3").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-4").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-5").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-6").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-7").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-8").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-9").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-10").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-11").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-12").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-13").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-14").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-15").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-16").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-17").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-18").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-19").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-
-  // ==========================================
-  // إزالة رتبة - 20 رتبة
-  // ==========================================
-
+const removeRoleCommand = addRoleOptions(
   new SlashCommandBuilder()
     .setName("ازالة-رتبة")
     .setDescription("إزالة حتى 20 رتبة من عضو")
@@ -187,91 +116,21 @@ const commands = [
         .setDescription("العضو المستهدف")
         .setRequired(true)
     )
+).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles);
 
-    .addRoleOption(option =>
-      option
-        .setName("الرتبة-الأساسية")
-        .setDescription("الرتبة الأساسية")
-        .setRequired(true)
-    )
+const commands = [
 
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-1").setDescription("رتبة جانبية").setRequired(false)
-    )
+  // ==========================================
+  // إعطاء رتبة
+  // ==========================================
 
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-2").setDescription("رتبة جانبية").setRequired(false)
-    )
+  giveRoleCommand,
 
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-3").setDescription("رتبة جانبية").setRequired(false)
-    )
+  // ==========================================
+  // إزالة رتبة
+  // ==========================================
 
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-4").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-5").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-6").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-7").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-8").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-9").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-10").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-11").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-12").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-13").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-14").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-15").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-16").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-17").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-18").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .addRoleOption(option =>
-      option.setName("رتبة-جانبية-19").setDescription("رتبة جانبية").setRequired(false)
-    )
-
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+  removeRoleCommand,
 
   // ==========================================
   // تحذير
@@ -292,7 +151,9 @@ const commands = [
         .setDescription("سبب التحذير")
         .setRequired(false)
     )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ModerateMembers
+    ),
 
   // ==========================================
   // مسج الرتبة
@@ -313,7 +174,9 @@ const commands = [
         .setDescription("نص الرسالة")
         .setRequired(true)
     )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageRoles
+    ),
 
   // ==========================================
   // إرسال إيمبد
@@ -322,6 +185,8 @@ const commands = [
   new SlashCommandBuilder()
     .setName("ارسال-ايمبد")
     .setDescription("إرسال رسالة مع إيمبد")
+
+    // إجباري
     .addChannelOption(option =>
       option
         .setName("مكان-الإرسال")
@@ -329,19 +194,26 @@ const commands = [
         .setRequired(true)
         .addChannelTypes(0)
     )
-    .addStringOption(option =>
-      option
-        .setName("الكلام-فوق-الإيمبد")
-        .setDescription("الكلام الذي يظهر فوق الإيمبد")
-        .setRequired(false)
-    )
+
+    // إجباري ويجب أن يأتي قبل الاختياري
     .addStringOption(option =>
       option
         .setName("الكلام-داخل-الإيمبد")
         .setDescription("الكلام الذي يظهر داخل الإيمبد")
         .setRequired(true)
     )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+
+    // اختياري
+    .addStringOption(option =>
+      option
+        .setName("الكلام-فوق-الإيمبد")
+        .setDescription("الكلام الذي يظهر فوق الإيمبد")
+        .setRequired(false)
+    )
+
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageMessages
+    ),
 
   // ==========================================
   // إرسال إعلان
@@ -350,6 +222,7 @@ const commands = [
   new SlashCommandBuilder()
     .setName("ارسال-اعلان")
     .setDescription("إرسال إعلان في روم محدد")
+
     .addChannelOption(option =>
       option
         .setName("مكان-الإعلان")
@@ -357,13 +230,17 @@ const commands = [
         .setRequired(true)
         .addChannelTypes(0)
     )
+
     .addStringOption(option =>
       option
         .setName("الرسالة")
         .setDescription("نص الإعلان")
         .setRequired(true)
     )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageMessages
+    )
 
 ].map(command => command.toJSON());
 
@@ -378,15 +255,25 @@ async function registerCommands() {
     const rest = new REST({ version: "10" }).setToken(TOKEN);
 
     const result = await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      Routes.applicationGuildCommands(
+        CLIENT_ID,
+        GUILD_ID
+      ),
       {
         body: commands
       }
     );
 
-    console.log(`✅ تم إنشاء ${result.length} أوامر سلاش بنجاح`);
+    console.log(
+      `✅ تم إنشاء ${result.length} أوامر سلاش بنجاح`
+    );
+
   } catch (error) {
-    console.error("❌ خطأ أثناء إنشاء أوامر السلاش:");
+
+    console.error(
+      "❌ خطأ أثناء إنشاء أوامر السلاش:"
+    );
+
     console.error(error);
   }
 }
@@ -396,306 +283,440 @@ async function registerCommands() {
 // =========================
 
 client.once("ready", async () => {
-  console.log(`✅ البوت شغال باسم ${client.user.tag}`);
+
+  console.log(
+    `✅ البوت شغال باسم ${client.user.tag}`
+  );
 
   await registerCommands();
+
 });
 
 // =========================
 // التعامل مع أوامر السلاش
 // =========================
 
-client.on("interactionCreate", async interaction => {
+client.on(
+  "interactionCreate",
+  async interaction => {
 
-  if (!interaction.isChatInputCommand()) return;
-
-  try {
-
-    // ==========================================
-    // إعطاء رتبة
-    // ==========================================
-
-    if (interaction.commandName === "اعطاء-رتبة") {
-
-      const user = interaction.options.getUser("العضو");
-      const member = await interaction.guild.members.fetch(user.id);
-
-      const roles = [];
-
-      for (let i = 0; i <= 19; i++) {
-
-        const name =
-          i === 0
-            ? "الرتبة-الأساسية"
-            : `رتبة-جانبية-${i}`;
-
-        const role = interaction.options.getRole(name);
-
-        if (role) {
-          roles.push(role);
-        }
-      }
-
-      const botMember = interaction.guild.members.me;
-
-      for (const role of roles) {
-
-        if (role.position >= botMember.roles.highest.position) {
-          continue;
-        }
-
-        await member.roles.add(role);
-      }
-
-      return interaction.reply({
-        content:
-          `✅ تم إعطاء ${member} عدد **${roles.length}** رتبة.`
-      });
-    }
-
-    // ==========================================
-    // إزالة رتبة
-    // ==========================================
-
-    if (interaction.commandName === "ازالة-رتبة") {
-
-      const user = interaction.options.getUser("العضو");
-      const member = await interaction.guild.members.fetch(user.id);
-
-      const roles = [];
-
-      for (let i = 0; i <= 19; i++) {
-
-        const name =
-          i === 0
-            ? "الرتبة-الأساسية"
-            : `رتبة-جانبية-${i}`;
-
-        const role = interaction.options.getRole(name);
-
-        if (role) {
-          roles.push(role);
-        }
-      }
-
-      const botMember = interaction.guild.members.me;
-
-      for (const role of roles) {
-
-        if (role.position >= botMember.roles.highest.position) {
-          continue;
-        }
-
-        await member.roles.remove(role);
-      }
-
-      // رسالة خاصة
-      try {
-
-        const embed = new EmbedBuilder()
-          .setTitle("تم إزالة رتب منك")
-          .setDescription(
-            `تمت إزالة **${roles.length}** رتبة منك في سيرفر **${interaction.guild.name}**.`
-          )
-          .setColor("Orange")
-          .setTimestamp();
-
-        await member.send({
-          embeds: [embed]
-        });
-
-      } catch {
-        console.log(`⚠️ الخاص مقفول لدى ${member.user.tag}`);
-      }
-
-      return interaction.reply({
-        content:
-          `✅ تم إزالة **${roles.length}** رتبة من ${member}.`
-      });
-    }
-
-    // ==========================================
-    // تحذير بدون حد
-    // ==========================================
-
-    if (interaction.commandName === "تحذير") {
-
-      const user = interaction.options.getUser("العضو");
-      const reason =
-        interaction.options.getString("السبب") || "غير محدد";
-
-      const member = await interaction.guild.members.fetch(user.id);
-
-      const data = loadWarnings();
-
-      const guildId = interaction.guild.id;
-      const userId = member.id;
-
-      if (!data[guildId]) {
-        data[guildId] = {};
-      }
-
-      if (!data[guildId][userId]) {
-        data[guildId][userId] = 0;
-      }
-
-      data[guildId][userId]++;
-
-      const count = data[guildId][userId];
-
-      saveWarnings(data);
-
-      await interaction.reply({
-        content:
-          `⚠️ تم تحذير ${member}\n` +
-          `📌 السبب: ${reason}\n` +
-          `📊 عدد التحذيرات: **${count}**`
-      });
-
-      try {
-
-        const embed = new EmbedBuilder()
-          .setTitle("⚠️ تحذير جديد")
-          .setDescription(
-            `تم تحذيرك في سيرفر **${interaction.guild.name}**.`
-          )
-          .addFields(
-            {
-              name: "السبب",
-              value: reason
-            },
-            {
-              name: "عدد التحذيرات",
-              value: `${count}`
-            }
-          )
-          .setColor("Red")
-          .setTimestamp();
-
-        await member.send({
-          embeds: [embed]
-        });
-
-      } catch {
-        console.log(`⚠️ الخاص مقفول لدى ${member.user.tag}`);
-      }
-
+    if (!interaction.isChatInputCommand()) {
       return;
     }
 
-    // ==========================================
-    // مسج الرتبة
-    // ==========================================
+    try {
 
-    if (interaction.commandName === "مسج-الرتبة") {
+      // ==========================================
+      // إعطاء رتبة
+      // ==========================================
 
-      const role = interaction.options.getRole("الرتبة");
-      const message = interaction.options.getString("الرسالة");
+      if (
+        interaction.commandName === "اعطاء-رتبة"
+      ) {
 
-      await interaction.deferReply({ ephemeral: true });
+        const user =
+          interaction.options.getUser("العضو");
 
-      let success = 0;
-      let failed = 0;
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
 
-      for (const member of role.members.values()) {
+        const roles = [];
 
-        try {
-          await member.send(message);
-          success++;
-        } catch {
-          failed++;
+        for (let i = 0; i <= 19; i++) {
+
+          const name =
+            i === 0
+              ? "الرتبة-الأساسية"
+              : `رتبة-جانبية-${i}`;
+
+          const role =
+            interaction.options.getRole(name);
+
+          if (role) {
+            roles.push(role);
+          }
         }
+
+        const botMember =
+          interaction.guild.members.me;
+
+        let added = 0;
+        let skipped = 0;
+
+        for (const role of roles) {
+
+          if (
+            role.position >=
+            botMember.roles.highest.position
+          ) {
+            skipped++;
+            continue;
+          }
+
+          try {
+
+            await member.roles.add(role);
+            added++;
+
+          } catch {
+
+            skipped++;
+
+          }
+        }
+
+        return interaction.reply({
+          content:
+            `✅ تم إعطاء ${member} عدد **${added}** رتبة.` +
+            (skipped > 0
+              ? `\n⚠️ تعذر إعطاء **${skipped}** رتبة.`
+              : "")
+        });
+
       }
 
-      return interaction.editReply(
-        `📨 تم الإرسال إلى **${success}** عضو.\n` +
-        `❌ فشل الإرسال إلى **${failed}** عضو.`
+      // ==========================================
+      // إزالة رتبة
+      // ==========================================
+
+      if (
+        interaction.commandName === "ازالة-رتبة"
+      ) {
+
+        const user =
+          interaction.options.getUser("العضو");
+
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
+
+        const roles = [];
+
+        for (let i = 0; i <= 19; i++) {
+
+          const name =
+            i === 0
+              ? "الرتبة-الأساسية"
+              : `رتبة-جانبية-${i}`;
+
+          const role =
+            interaction.options.getRole(name);
+
+          if (role) {
+            roles.push(role);
+          }
+        }
+
+        const botMember =
+          interaction.guild.members.me;
+
+        let removed = 0;
+        let skipped = 0;
+
+        for (const role of roles) {
+
+          if (
+            role.position >=
+            botMember.roles.highest.position
+          ) {
+            skipped++;
+            continue;
+          }
+
+          try {
+
+            await member.roles.remove(role);
+            removed++;
+
+          } catch {
+
+            skipped++;
+
+          }
+        }
+
+        // رسالة خاصة
+        try {
+
+          const embed =
+            new EmbedBuilder()
+              .setTitle("تم إزالة رتب منك")
+              .setDescription(
+                `تمت إزالة **${removed}** رتبة منك في سيرفر **${interaction.guild.name}**.`
+              )
+              .setColor("Orange")
+              .setTimestamp();
+
+          await member.send({
+            embeds: [embed]
+          });
+
+        } catch {
+
+          console.log(
+            `⚠️ الخاص مقفول لدى ${member.user.tag}`
+          );
+
+        }
+
+        return interaction.reply({
+          content:
+            `✅ تم إزالة **${removed}** رتبة من ${member}.` +
+            (skipped > 0
+              ? `\n⚠️ تعذر إزالة **${skipped}** رتبة.`
+              : "")
+        });
+
+      }
+
+      // ==========================================
+      // تحذير
+      // ==========================================
+
+      if (
+        interaction.commandName === "تحذير"
+      ) {
+
+        const user =
+          interaction.options.getUser("العضو");
+
+        const reason =
+          interaction.options.getString("السبب") ||
+          "غير محدد";
+
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
+
+        const data =
+          loadWarnings();
+
+        const guildId =
+          interaction.guild.id;
+
+        const userId =
+          member.id;
+
+        if (!data[guildId]) {
+          data[guildId] = {};
+        }
+
+        if (!data[guildId][userId]) {
+          data[guildId][userId] = 0;
+        }
+
+        data[guildId][userId]++;
+
+        const count =
+          data[guildId][userId];
+
+        saveWarnings(data);
+
+        await interaction.reply({
+          content:
+            `⚠️ تم تحذير ${member}\n` +
+            `📌 السبب: ${reason}\n` +
+            `📊 عدد التحذيرات: **${count}**`
+        });
+
+        // إرسال التحذير للخاص
+        try {
+
+          const embed =
+            new EmbedBuilder()
+              .setTitle("⚠️ تحذير جديد")
+              .setDescription(
+                `تم تحذيرك في سيرفر **${interaction.guild.name}**.`
+              )
+              .addFields(
+                {
+                  name: "السبب",
+                  value: reason
+                },
+                {
+                  name: "عدد التحذيرات",
+                  value: `${count}`
+                }
+              )
+              .setColor("Red")
+              .setTimestamp();
+
+          await member.send({
+            embeds: [embed]
+          });
+
+        } catch {
+
+          console.log(
+            `⚠️ الخاص مقفول لدى ${member.user.tag}`
+          );
+
+        }
+
+        return;
+      }
+
+      // ==========================================
+      // مسج الرتبة
+      // ==========================================
+
+      if (
+        interaction.commandName === "مسج-الرتبة"
+      ) {
+
+        const role =
+          interaction.options.getRole("الرتبة");
+
+        const message =
+          interaction.options.getString("الرسالة");
+
+        await interaction.deferReply({
+          ephemeral: true
+        });
+
+        let success = 0;
+        let failed = 0;
+
+        for (
+          const member of role.members.values()
+        ) {
+
+          try {
+
+            await member.send(message);
+            success++;
+
+          } catch {
+
+            failed++;
+
+          }
+
+        }
+
+        return interaction.editReply(
+          `📨 تم الإرسال إلى **${success}** عضو.\n` +
+          `❌ فشل الإرسال إلى **${failed}** عضو.`
+        );
+
+      }
+
+      // ==========================================
+      // إرسال إيمبد
+      // ==========================================
+
+      if (
+        interaction.commandName === "ارسال-ايمبد"
+      ) {
+
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإرسال"
+          );
+
+        const insideText =
+          interaction.options.getString(
+            "الكلام-داخل-الإيمبد"
+          );
+
+        const topText =
+          interaction.options.getString(
+            "الكلام-فوق-الإيمبد"
+          );
+
+        const embed =
+          new EmbedBuilder()
+            .setDescription(insideText)
+            .setColor("Blue")
+            .setTimestamp();
+
+        await channel.send({
+          content: topText || "",
+          embeds: [embed]
+        });
+
+        return interaction.reply({
+          content:
+            `✅ تم إرسال الإيمبد في ${channel}.`,
+          ephemeral: true
+        });
+
+      }
+
+      // ==========================================
+      // إرسال إعلان
+      // ==========================================
+
+      if (
+        interaction.commandName === "ارسال-اعلان"
+      ) {
+
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإعلان"
+          );
+
+        const message =
+          interaction.options.getString(
+            "الرسالة"
+          );
+
+        const embed =
+          new EmbedBuilder()
+            .setTitle("📢 إعلان")
+            .setDescription(message)
+            .setColor("Blue")
+            .setTimestamp();
+
+        await channel.send({
+          embeds: [embed]
+        });
+
+        return interaction.reply({
+          content:
+            `✅ تم إرسال الإعلان في ${channel}.`,
+          ephemeral: true
+        });
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "❌ حدث خطأ أثناء تنفيذ الأمر:"
       );
-    }
 
-    // ==========================================
-    // إرسال إيمبد
-    // ==========================================
+      console.error(error);
 
-    if (interaction.commandName === "ارسال-ايمبد") {
+      if (
+        interaction.replied ||
+        interaction.deferred
+      ) {
 
-      const channel =
-        interaction.options.getChannel("مكان-الإرسال");
+        await interaction.followUp({
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          ephemeral: true
+        }).catch(() => {});
 
-      const topText =
-        interaction.options.getString("الكلام-فوق-الإيمبد");
+      } else {
 
-      const insideText =
-        interaction.options.getString("الكلام-داخل-الإيمبد");
+        await interaction.reply({
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          ephemeral: true
+        }).catch(() => {});
 
-      const embed = new EmbedBuilder()
-        .setDescription(insideText)
-        .setColor("Blue")
-        .setTimestamp();
-
-      const content = topText || "";
-
-      await channel.send({
-        content: content,
-        embeds: [embed]
-      });
-
-      return interaction.reply({
-        content: `✅ تم إرسال الإيمبد في ${channel}.`,
-        ephemeral: true
-      });
-    }
-
-    // ==========================================
-    // إرسال إعلان
-    // ==========================================
-
-    if (interaction.commandName === "ارسال-اعلان") {
-
-      const channel =
-        interaction.options.getChannel("مكان-الإعلان");
-
-      const message =
-        interaction.options.getString("الرسالة");
-
-      const embed = new EmbedBuilder()
-        .setTitle("📢 إعلان")
-        .setDescription(message)
-        .setColor("Blue")
-        .setTimestamp();
-
-      await channel.send({
-        embeds: [embed]
-      });
-
-      return interaction.reply({
-        content: `✅ تم إرسال الإعلان في ${channel}.`,
-        ephemeral: true
-      });
-    }
-
-  } catch (error) {
-
-    console.error("❌ حدث خطأ أثناء تنفيذ الأمر:");
-    console.error(error);
-
-    if (interaction.replied || interaction.deferred) {
-
-      await interaction.followUp({
-        content: "❌ حدث خطأ أثناء تنفيذ الأمر.",
-        ephemeral: true
-      }).catch(() => {});
-
-    } else {
-
-      await interaction.reply({
-        content: "❌ حدث خطأ أثناء تنفيذ الأمر.",
-        ephemeral: true
-      }).catch(() => {});
+      }
 
     }
+
   }
-});
+);
 
 // =========================
 // تسجيل الدخول
@@ -703,9 +724,18 @@ client.on("interactionCreate", async interaction => {
 
 client.login(TOKEN)
   .then(() => {
-    console.log("✅ تم تسجيل الدخول إلى Discord");
+
+    console.log(
+      "✅ تم تسجيل الدخول إلى Discord"
+    );
+
   })
   .catch(error => {
-    console.error("❌ فشل تسجيل الدخول:");
+
+    console.error(
+      "❌ فشل تسجيل الدخول:"
+    );
+
     console.error(error);
+
   });
