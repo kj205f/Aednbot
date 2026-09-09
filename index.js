@@ -416,4 +416,11 @@ client.on("interactionCreate", async interaction => {
 // تشغيل البوت
 // =========================
 
-client.login(TOKEN);
+client.login(TOKEN)
+  .then(() => {
+    console.log("✅ تم تسجيل الدخول إلى Discord");
+  })
+  .catch((error) => {
+    console.error("❌ فشل تسجيل الدخول:");
+    console.error(error);
+  });
