@@ -14,6 +14,23 @@ require("dotenv").config();
 console.log("🚀 index.js بدأ التشغيل");
 
 // =========================
+// Keep-Alive Server (Render + UptimeRobot)
+// =========================
+
+const express = require("express");
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("✅ البوت شغال");
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🌐 Keep-alive server يعمل على البورت ${PORT}`);
+});
+
+// =========================
 // Environment Variables
 // =========================
 
