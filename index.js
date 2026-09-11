@@ -18,7 +18,7 @@ require("dotenv").config();
 console.log("🚀 index.js بدأ التشغيل");
 
 // =========================
-// Keep-Alive Server (Render + UptimeRobot)
+// Keep-Alive Server
 // =========================
 
 const express = require("express");
@@ -50,10 +50,20 @@ if (!TOKEN || !GUILD_ID || !CLIENT_ID) {
 }
 
 // =========================
-// الرتبة المسؤولة عن أوامر الإدارة الجديدة
+// الرتبة المسؤولة عن أوامر الإدارة
 // =========================
 
 const STAFF_ROLE_ID = "1442207394280243324";
+
+// =========================
+// رتبة مسؤولي التذاكر
+// =========================
+
+const TICKET_STAFF_ROLE_ID = "1441509616151298270";
+
+// =========================
+// التحقق من رتبة الإدارة
+// =========================
 
 function isStaff(member) {
   if (!member) return false;
@@ -61,13 +71,26 @@ function isStaff(member) {
 }
 
 // =========================
-// إعدادات البوت
+// التحقق من مسؤول التذاكر
+// =========================
+
+function isTicketStaff(member) {
+  if (!member) return false;
+  return member.roles.cache.has(TICKET_STAFF_ROLE_ID);
+}
+
+// =========================
+// الملفات
 // =========================
 
 const WARN_FILE = "warnings.json";
 const COUNTER_FILE = "counters.json";
 const AUTOREPLY_FILE = "autoreplies.json";
 const LEVELS_FILE = "levels.json";
+
+// =========================
+// البوت
+// =========================
 
 const client = new Client({
   intents: [
@@ -104,7 +127,7 @@ function saveWarnings(data) {
 }
 
 // =========================
-// نظام زر العداد
+// نظام العدادات
 // =========================
 
 function loadCounters() {
@@ -129,7 +152,7 @@ function saveCounters(data) {
 }
 
 // =========================
-// نظام الرد التلقائي
+// نظام الردود التلقائية
 // =========================
 
 function loadAutoReplies() {
@@ -154,7 +177,7 @@ function saveAutoReplies(data) {
 }
 
 // =========================
-// نظام المستويات (XP)
+// نظام المستويات
 // =========================
 
 function loadLevels() {
@@ -182,11 +205,10 @@ function xpNeededForLevel(level) {
   return level * 100;
 }
 
-// كول داون بالذاكرة بس (يمنع تكرار XP كل ثانية) — يترجع بعد إعادة تشغيل البوت وده طبيعي
 const xpCooldown = new Map();
 
 // =========================
-// إنشاء أمر إعطاء/إزالة الرتب
+// إنشاء أوامر الرتب
 // =========================
 
 function addRoleOptions(command) {
@@ -239,21 +261,17 @@ const removeRoleCommand = addRoleOptions(
 
 const commands = [
 
-  // ==========================================
-  // إعطاء رتبة
-  // ==========================================
+  // =========================
+  // الرتب
+  // =========================
 
   giveRoleCommand,
 
-  // ==========================================
-  // إزالة رتبة
-  // ==========================================
-
   removeRoleCommand,
 
-  // ==========================================
+  // =========================
   // تحذير
-  // ==========================================
+  // =========================
 
   new SlashCommandBuilder()
     .setName("تحذير")
@@ -274,9 +292,9 @@ const commands = [
       PermissionFlagsBits.ModerateMembers
     ),
 
-  // ==========================================
+  // =========================
   // مسج الرتبة
-  // ==========================================
+  // =========================
 
   new SlashCommandBuilder()
     .setName("مسج-الرتبة")
@@ -297,14 +315,13 @@ const commands = [
       PermissionFlagsBits.ManageRoles
     ),
 
-  // ==========================================
+  // =========================
   // إرسال إيمبد
-  // ==========================================
+  // =========================
 
   new SlashCommandBuilder()
     .setName("ارسال-ايمبد")
     .setDescription("إرسال رسالة مع إيمبد")
-
     .addChannelOption(option =>
       option
         .setName("مكان-الإرسال")
@@ -312,33 +329,29 @@ const commands = [
         .setRequired(true)
         .addChannelTypes(0)
     )
-
     .addStringOption(option =>
       option
         .setName("الكلام-داخل-الإيمبد")
         .setDescription("الكلام الذي يظهر داخل الإيمبد")
         .setRequired(true)
     )
-
     .addStringOption(option =>
       option
         .setName("الكلام-فوق-الإيمبد")
         .setDescription("الكلام الذي يظهر فوق الإيمبد")
         .setRequired(false)
     )
-
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages
     ),
 
-  // ==========================================
+  // =========================
   // إرسال إعلان
-  // ==========================================
+  // =========================
 
   new SlashCommandBuilder()
     .setName("ارسال-اعلان")
     .setDescription("إرسال إعلان في روم محدد")
-
     .addChannelOption(option =>
       option
         .setName("مكان-الإعلان")
@@ -346,26 +359,23 @@ const commands = [
         .setRequired(true)
         .addChannelTypes(0)
     )
-
     .addStringOption(option =>
       option
         .setName("الرسالة")
         .setDescription("نص الإعلان")
         .setRequired(true)
     )
-
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages
     ),
 
-  // ==========================================
-  // زر عداد
-  // ==========================================
+  // =========================
+  // زر العداد
+  // =========================
 
   new SlashCommandBuilder()
     .setName("زر-عداد")
-    .setDescription("إرسال رسالة مع زر صح وعداد يزيد عند الضغط (مرة واحدة لكل عضو)")
-
+    .setDescription("إرسال رسالة مع زر صح وعداد يزيد عند الضغط")
     .addChannelOption(option =>
       option
         .setName("مكان-الإرسال")
@@ -373,25 +383,23 @@ const commands = [
         .setRequired(true)
         .addChannelTypes(0)
     )
-
     .addStringOption(option =>
       option
         .setName("الرسالة")
         .setDescription("نص الرسالة")
         .setRequired(true)
     )
-
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages
     ),
 
-  // ==========================================
-  // نظام الرد التلقائي (إدارة فقط - الرتبة المحددة)
-  // ==========================================
+  // =========================
+  // الردود التلقائية
+  // =========================
 
   new SlashCommandBuilder()
     .setName("اضافة-رد")
-    .setDescription("إضافة رد تلقائي على كلمة معينة (مخصص للإدارة)")
+    .setDescription("إضافة رد تلقائي على كلمة معينة")
     .addStringOption(option =>
       option
         .setName("الكلمة")
@@ -406,22 +414,38 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
-    .setName("حذف-رد")
-    .setDescription("حذف رد تلقائي (مخصص للإدارة)")
+    .setName("تعديل-رد")
+    .setDescription("تعديل رد تلقائي موجود")
     .addStringOption(option =>
       option
         .setName("الكلمة")
-        .setDescription("الكلمة المراد حذف الرد التلقائي عليها")
+        .setDescription("الكلمة التي تريد تعديل ردها")
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option
+        .setName("الرد-الجديد")
+        .setDescription("الرد الجديد")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("حذف-رد")
+    .setDescription("حذف رد تلقائي")
+    .addStringOption(option =>
+      option
+        .setName("الكلمة")
+        .setDescription("الكلمة المراد حذف الرد عليها")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("قائمة-الردود")
-    .setDescription("عرض جميع الردود التلقائية المسجلة (مخصص للإدارة)"),
+    .setDescription("عرض جميع الردود التلقائية"),
 
-  // ==========================================
-  // نظام المستويات
-  // ==========================================
+  // =========================
+  // المستويات
+  // =========================
 
   new SlashCommandBuilder()
     .setName("مستواي")
@@ -429,7 +453,7 @@ const commands = [
     .addUserOption(option =>
       option
         .setName("العضو")
-        .setDescription("اعرض مستوى عضو آخر (اختياري)")
+        .setDescription("اعرض مستوى عضو آخر")
         .setRequired(false)
     ),
 
@@ -439,7 +463,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("تعديل-مستوى")
-    .setDescription("تعديل مستوى ونقاط عضو يدويًا (مخصص للإدارة)")
+    .setDescription("تعديل مستوى ونقاط عضو يدويًا")
     .addUserOption(option =>
       option
         .setName("العضو")
@@ -455,17 +479,17 @@ const commands = [
     .addIntegerOption(option =>
       option
         .setName("النقاط")
-        .setDescription("النقاط الحالية داخل هذا المستوى (اختياري، الافتراضي 0)")
+        .setDescription("النقاط الحالية داخل المستوى")
         .setRequired(false)
     ),
 
-  // ==========================================
-  // نظام التذاكر
-  // ==========================================
+  // =========================
+  // لوحة التذاكر
+  // =========================
 
   new SlashCommandBuilder()
     .setName("لوحة-تذاكر")
-    .setDescription("إرسال لوحة فتح التذاكر في روم معين (مخصص للإدارة)")
+    .setDescription("إرسال لوحة فتح التذاكر")
     .addChannelOption(option =>
       option
         .setName("القناة")
@@ -501,11 +525,7 @@ async function registerCommands() {
     );
 
   } catch (error) {
-
-    console.error(
-      "❌ خطأ أثناء إنشاء أوامر السلاش:"
-    );
-
+    console.error("❌ خطأ أثناء إنشاء أوامر السلاش:");
     console.error(error);
   }
 }
@@ -525,7 +545,7 @@ client.once("ready", async () => {
 });
 
 // =========================
-// نظام الرد التلقائي + المستويات (على كل رسالة عادية)
+// الردود التلقائية + XP
 // =========================
 
 client.on("messageCreate", async message => {
@@ -533,29 +553,46 @@ client.on("messageCreate", async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  // ---------- الرد التلقائي ----------
+  // =========================
+  // الرد التلقائي
+  // =========================
+
   try {
 
     const replies = loadAutoReplies();
     const content = message.content.toLowerCase();
 
     for (const trigger in replies) {
+
       if (content.includes(trigger.toLowerCase())) {
+
         await message.reply(replies[trigger]);
+
         break;
       }
     }
 
   } catch (error) {
-    console.error("❌ خطأ في نظام الرد التلقائي:", error);
+
+    console.error(
+      "❌ خطأ في نظام الرد التلقائي:",
+      error
+    );
+
   }
 
-  // ---------- نظام المستويات ----------
+  // =========================
+  // نظام XP
+  // =========================
+
   try {
 
-    const cooldownKey = `${message.guild.id}_${message.author.id}`;
+    const cooldownKey =
+      `${message.guild.id}_${message.author.id}`;
+
     const now = Date.now();
-    const lastTime = xpCooldown.get(cooldownKey) || 0;
+    const lastTime =
+      xpCooldown.get(cooldownKey) || 0;
 
     if (now - lastTime < 60 * 1000) {
       return;
@@ -564,43 +601,129 @@ client.on("messageCreate", async message => {
     xpCooldown.set(cooldownKey, now);
 
     const data = loadLevels();
+
     const guildId = message.guild.id;
     const userId = message.author.id;
 
-    if (!data[guildId]) data[guildId] = {};
+    if (!data[guildId]) {
+      data[guildId] = {};
+    }
+
     if (!data[guildId][userId]) {
-      data[guildId][userId] = { xp: 0, level: 1 };
+      data[guildId][userId] = {
+        xp: 0,
+        level: 1
+      };
     }
 
     const entry = data[guildId][userId];
-    const earnedXp = Math.floor(Math.random() * 11) + 15; // 15 إلى 25
+
+    const earnedXp =
+      Math.floor(Math.random() * 11) + 15;
 
     entry.xp += earnedXp;
 
     let leveledUp = false;
 
-    while (entry.xp >= xpNeededForLevel(entry.level)) {
-      entry.xp -= xpNeededForLevel(entry.level);
+    while (
+      entry.xp >=
+      xpNeededForLevel(entry.level)
+    ) {
+
+      entry.xp -=
+        xpNeededForLevel(entry.level);
+
       entry.level++;
+
       leveledUp = true;
     }
 
     saveLevels(data);
 
     if (leveledUp) {
+
       message.channel.send(
         `🎉 مبروك ${message.author} وصلت للمستوى **${entry.level}**!`
       ).catch(() => {});
+
     }
 
   } catch (error) {
-    console.error("❌ خطأ في نظام المستويات:", error);
+
+    console.error(
+      "❌ خطأ في نظام المستويات:",
+      error
+    );
+
   }
 
 });
 
 // =========================
-// التعامل مع التفاعلات (أوامر السلاش + الأزرار)
+// دالة الحصول على رقم التذكرة
+// =========================
+
+function getNextTicketNumber(guildId) {
+
+  const data = loadCounters();
+
+  if (!data.tickets) {
+    data.tickets = {};
+  }
+
+  if (
+    typeof data.tickets[guildId] !== "number" ||
+    data.tickets[guildId] < 100
+  ) {
+
+    data.tickets[guildId] = 100;
+
+  } else {
+
+    data.tickets[guildId]++;
+  }
+
+  saveCounters(data);
+
+  return data.tickets[guildId];
+}
+
+// =========================
+// أزرار أنواع التذاكر
+// =========================
+
+function createTicketTypeRow(disabled = false) {
+
+  const complaintButton = new ButtonBuilder()
+    .setCustomId("نوع_تذكرة_شكوى")
+    .setLabel("تكت شكوى")
+    .setEmoji("📢")
+    .setStyle(ButtonStyle.Danger)
+    .setDisabled(disabled);
+
+  const supportButton = new ButtonBuilder()
+    .setCustomId("نوع_تذكرة_دعم")
+    .setLabel("تكت دعم فني")
+    .setEmoji("🛠️")
+    .setStyle(ButtonStyle.Primary)
+    .setDisabled(disabled);
+
+  const partnershipButton = new ButtonBuilder()
+    .setCustomId("نوع_تذكرة_شراكة")
+    .setLabel("تكت شراكة")
+    .setEmoji("🤝")
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(disabled);
+
+  return new ActionRowBuilder().addComponents(
+    complaintButton,
+    supportButton,
+    partnershipButton
+  );
+}
+
+// =========================
+// التعامل مع التفاعلات
 // =========================
 
 client.on(
@@ -610,7 +733,7 @@ client.on(
     try {
 
       // ==========================================
-      // ضغط زر العداد
+      // زر العداد
       // ==========================================
 
       if (
@@ -624,19 +747,32 @@ client.on(
         const data = loadCounters();
 
         if (!data[counterId]) {
-          data[counterId] = { count: 0, users: [] };
+          data[counterId] = {
+            count: 0,
+            users: []
+          };
         }
 
         const entry = data[counterId];
 
-        if (entry.users.includes(interaction.user.id)) {
+        if (
+          entry.users.includes(
+            interaction.user.id
+          )
+        ) {
+
           return interaction.reply({
-            content: "⚠️ أنت ضغطت الزر من قبل، لا يمكنك الضغط مرة أخرى.",
+            content:
+              "⚠️ أنت ضغطت الزر من قبل، لا يمكنك الضغط مرة أخرى.",
             ephemeral: true
           });
+
         }
 
-        entry.users.push(interaction.user.id);
+        entry.users.push(
+          interaction.user.id
+        );
+
         entry.count++;
 
         saveCounters(data);
@@ -646,14 +782,18 @@ client.on(
           .setLabel(`✅ ${entry.count}`)
           .setStyle(ButtonStyle.Success);
 
-        const newRow = new ActionRowBuilder().addComponents(newButton);
+        const newRow =
+          new ActionRowBuilder()
+            .addComponents(newButton);
 
-        return interaction.update({ components: [newRow] });
+        return interaction.update({
+          components: [newRow]
+        });
 
       }
 
       // ==========================================
-      // زر فتح تذكرة
+      // فتح التذكرة
       // ==========================================
 
       if (
@@ -661,94 +801,241 @@ client.on(
         interaction.customId === "فتح_تذكرة"
       ) {
 
-        const channelName = `تذكرة-${interaction.user.id}`;
-
-        const existing = interaction.guild.channels.cache.find(
-          c => c.name === channelName
-        );
+        const existing =
+          interaction.guild.channels.cache.find(
+            c =>
+              c.type === ChannelType.GuildText &&
+              c.topic ===
+                `ticketOwner:${interaction.user.id}`
+          );
 
         if (existing) {
+
           return interaction.reply({
-            content: `⚠️ لديك تذكرة مفتوحة بالفعل: ${existing}`,
+            content:
+              `⚠️ لديك تذكرة مفتوحة بالفعل: ${existing}`,
             ephemeral: true
           });
+
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({
+          ephemeral: true
+        });
 
-        const ticketChannel = await interaction.guild.channels.create({
-          name: channelName,
-          type: ChannelType.GuildText,
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              deny: [PermissionFlagsBits.ViewChannel]
-            },
-            {
-              id: interaction.user.id,
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.SendMessages,
-                PermissionFlagsBits.ReadMessageHistory
-              ]
-            },
-            {
-              id: STAFF_ROLE_ID,
-              allow: [
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.SendMessages,
-                PermissionFlagsBits.ReadMessageHistory
-              ]
-            }
+        const ticketNumber =
+          getNextTicketNumber(
+            interaction.guild.id
+          );
+
+        const username =
+          interaction.user.username
+            .toLowerCase()
+            .replace(/[^a-z0-9\u0600-\u06FF-_]/g, "")
+            .slice(0, 20) || "عضو";
+
+        const channelName =
+          `تذكرة-${ticketNumber}-${username}`;
+
+        const ticketChannel =
+          await interaction.guild.channels.create({
+            name: channelName,
+            type: ChannelType.GuildText,
+
+            topic:
+              `ticketOwner:${interaction.user.id}|ticketNumber:${ticketNumber}|ticketType:none`,
+
+            permissionOverwrites: [
+
+              {
+                id: interaction.guild.id,
+                deny: [
+                  PermissionFlagsBits.ViewChannel
+                ]
+              },
+
+              {
+                id: interaction.user.id,
+                allow: [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.SendMessages,
+                  PermissionFlagsBits.ReadMessageHistory
+                ]
+              },
+
+              {
+                id: TICKET_STAFF_ROLE_ID,
+                allow: [
+                  PermissionFlagsBits.ViewChannel,
+                  PermissionFlagsBits.SendMessages,
+                  PermissionFlagsBits.ReadMessageHistory
+                ]
+              }
+
+            ]
+          });
+
+        // =========================
+        // إيمبد اختيار النوع
+        // =========================
+
+        const typeEmbed =
+          new EmbedBuilder()
+            .setTitle("🎫 اختيار نوع التكت")
+            .setDescription(
+              `مرحبًا ${interaction.user}\n\n` +
+              `**اختر نوع التكت المناسب لك من الأزرار بالأسفل:**`
+            )
+            .addFields(
+              {
+                name: "📢 تكت شكوى",
+                value:
+                  "للشكاوى والمشاكل ضد الأعضاء."
+              },
+              {
+                name: "🛠️ تكت دعم فني",
+                value:
+                  "للمشاكل والاستفسارات الفنية."
+              },
+              {
+                name: "🤝 تكت شراكة",
+                value:
+                  "لطلب شراكة بين السيرفرات."
+              }
+            )
+            .setColor("Blue")
+            .setFooter({
+              text:
+                `رقم التذكرة: ${ticketNumber}`
+            })
+            .setTimestamp();
+
+        await ticketChannel.send({
+          content:
+            `${interaction.user} <@&${TICKET_STAFF_ROLE_ID}>`,
+          embeds: [typeEmbed],
+          components: [
+            createTicketTypeRow(false)
           ]
         });
 
-        const closeButton = new ButtonBuilder()
-          .setCustomId("اغلاق_تذكرة")
-          .setLabel("🔒 إغلاق التذكرة")
-          .setStyle(ButtonStyle.Danger);
+        // =========================
+        // زر الإغلاق
+        // =========================
 
-        const row = new ActionRowBuilder().addComponents(closeButton);
+        const closeButton =
+          new ButtonBuilder()
+            .setCustomId("اغلاق_تذكرة")
+            .setLabel("🔒 إغلاق التذكرة")
+            .setStyle(ButtonStyle.Danger);
 
-        const welcomeEmbed = new EmbedBuilder()
-          .setTitle("🎫 تذكرة دعم جديدة")
-          .setDescription(
-            `مرحبًا ${interaction.user}، اشرح مشكلتك وسيتم الرد عليك من فريق الدعم قريبًا.`
-          )
-          .setColor("Blue")
-          .setTimestamp();
+        const closeRow =
+          new ActionRowBuilder()
+            .addComponents(closeButton);
 
         await ticketChannel.send({
-          content: `${interaction.user} <@&${STAFF_ROLE_ID}>`,
-          embeds: [welcomeEmbed],
-          components: [row]
+          embeds: [
+            new EmbedBuilder()
+              .setDescription(
+                "🔒 عند الانتهاء من التذكرة يمكن لصاحبها أو مسؤولي التذاكر إغلاقها."
+              )
+              .setColor("Red")
+          ],
+          components: [closeRow]
         });
 
         return interaction.editReply({
-          content: `✅ تم فتح تذكرتك هنا: ${ticketChannel}`
+          content:
+            `✅ تم فتح التذكرة رقم **${ticketNumber}** هنا: ${ticketChannel}`
         });
 
       }
 
       // ==========================================
-      // زر إغلاق تذكرة
+      // اختيار شكوى
       // ==========================================
 
       if (
         interaction.isButton() &&
-        interaction.customId === "اغلاق_تذكرة"
+        interaction.customId ===
+          "نوع_تذكرة_شكوى"
       ) {
 
-        const creatorId = interaction.channel.name.replace("تذكرة-", "");
+        return await handleTicketType(
+          interaction,
+          "شكوى"
+        );
+
+      }
+
+      // ==========================================
+      // اختيار دعم فني
+      // ==========================================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId ===
+          "نوع_تذكرة_دعم"
+      ) {
+
+        return await handleTicketType(
+          interaction,
+          "دعم فني"
+        );
+
+      }
+
+      // ==========================================
+      // اختيار شراكة
+      // ==========================================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId ===
+          "نوع_تذكرة_شراكة"
+      ) {
+
+        return await handleTicketType(
+          interaction,
+          "شراكة"
+        );
+
+      }
+
+      // ==========================================
+      // إغلاق التذكرة
+      // ==========================================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId ===
+          "اغلاق_تذكرة"
+      ) {
+
+        const topic =
+          interaction.channel.topic || "";
+
+        const ownerMatch =
+          topic.match(
+            /ticketOwner:(\d+)/
+          );
+
+        const creatorId =
+          ownerMatch
+            ? ownerMatch[1]
+            : null;
 
         if (
-          !isStaff(interaction.member) &&
+          !isTicketStaff(interaction.member) &&
           interaction.user.id !== creatorId
         ) {
+
           return interaction.reply({
-            content: "❌ لا يمكنك إغلاق هذه التذكرة.",
+            content:
+              "❌ لا يمكنك إغلاق هذه التذكرة.",
             ephemeral: true
           });
+
         }
 
         await interaction.reply(
@@ -756,15 +1043,18 @@ client.on(
         );
 
         setTimeout(() => {
-          interaction.channel.delete().catch(() => {});
+
+          interaction.channel
+            .delete()
+            .catch(() => {});
+
         }, 5000);
 
         return;
-
       }
 
       // ==========================================
-      // من هنا وتحت: أوامر السلاش فقط
+      // أوامر السلاش
       // ==========================================
 
       if (!interaction.isChatInputCommand()) {
@@ -775,41 +1065,74 @@ client.on(
       // إعطاء رتبة
       // ==========================================
 
-      if (interaction.commandName === "اعطاء-رتبة") {
+      if (
+        interaction.commandName ===
+        "اعطاء-رتبة"
+      ) {
 
-        const user = interaction.options.getUser("العضو");
-        const member = await interaction.guild.members.fetch(user.id);
+        const user =
+          interaction.options.getUser("العضو");
+
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
 
         const roles = [];
 
         for (let i = 0; i <= 19; i++) {
-          const name = i === 0 ? "الرتبة-الأساسية" : `رتبة-جانبية-${i}`;
-          const role = interaction.options.getRole(name);
-          if (role) roles.push(role);
+
+          const name =
+            i === 0
+              ? "الرتبة-الأساسية"
+              : `رتبة-جانبية-${i}`;
+
+          const role =
+            interaction.options.getRole(name);
+
+          if (role) {
+            roles.push(role);
+          }
         }
 
-        const botMember = interaction.guild.members.me;
+        const botMember =
+          interaction.guild.members.me;
 
         let added = 0;
         let skipped = 0;
 
         for (const role of roles) {
-          if (role.position >= botMember.roles.highest.position) {
+
+          if (
+            role.position >=
+            botMember.roles.highest.position
+          ) {
+
             skipped++;
             continue;
+
           }
+
           try {
+
             await member.roles.add(role);
             added++;
+
           } catch {
+
             skipped++;
+
           }
         }
 
         return interaction.reply({
           content:
             `✅ تم إعطاء ${member} عدد **${added}** رتبة.` +
-            (skipped > 0 ? `\n⚠️ تعذر إعطاء **${skipped}** رتبة.` : "")
+            (
+              skipped > 0
+                ? `\n⚠️ تعذر إعطاء **${skipped}** رتبة.`
+                : ""
+            )
         });
 
       }
@@ -818,55 +1141,97 @@ client.on(
       // إزالة رتبة
       // ==========================================
 
-      if (interaction.commandName === "ازالة-رتبة") {
+      if (
+        interaction.commandName ===
+        "ازالة-رتبة"
+      ) {
 
-        const user = interaction.options.getUser("العضو");
-        const member = await interaction.guild.members.fetch(user.id);
+        const user =
+          interaction.options.getUser("العضو");
+
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
 
         const roles = [];
 
         for (let i = 0; i <= 19; i++) {
-          const name = i === 0 ? "الرتبة-الأساسية" : `رتبة-جانبية-${i}`;
-          const role = interaction.options.getRole(name);
-          if (role) roles.push(role);
+
+          const name =
+            i === 0
+              ? "الرتبة-الأساسية"
+              : `رتبة-جانبية-${i}`;
+
+          const role =
+            interaction.options.getRole(name);
+
+          if (role) {
+            roles.push(role);
+          }
         }
 
-        const botMember = interaction.guild.members.me;
+        const botMember =
+          interaction.guild.members.me;
 
         let removed = 0;
         let skipped = 0;
 
         for (const role of roles) {
-          if (role.position >= botMember.roles.highest.position) {
+
+          if (
+            role.position >=
+            botMember.roles.highest.position
+          ) {
+
             skipped++;
             continue;
+
           }
+
           try {
+
             await member.roles.remove(role);
             removed++;
+
           } catch {
+
             skipped++;
+
           }
         }
 
         try {
-          const embed = new EmbedBuilder()
-            .setTitle("تم إزالة رتب منك")
-            .setDescription(
-              `تمت إزالة **${removed}** رتبة منك في سيرفر **${interaction.guild.name}**.`
-            )
-            .setColor("Orange")
-            .setTimestamp();
 
-          await member.send({ embeds: [embed] });
+          const embed =
+            new EmbedBuilder()
+              .setTitle("تم إزالة رتب منك")
+              .setDescription(
+                `تمت إزالة **${removed}** رتبة منك في سيرفر **${interaction.guild.name}**.`
+              )
+              .setColor("Orange")
+              .setTimestamp();
+
+          await member.send({
+            embeds: [embed]
+          });
+
         } catch {
-          console.log(`⚠️ الخاص مقفول لدى ${member.user.tag}`);
+
+          console.log(
+            `⚠️ الخاص مقفول لدى ${member.user.tag}`
+          );
+
         }
 
         return interaction.reply({
           content:
             `✅ تم إزالة **${removed}** رتبة من ${member}.` +
-            (skipped > 0 ? `\n⚠️ تعذر إزالة **${skipped}** رتبة.` : "")
+            (
+              skipped > 0
+                ? `\n⚠️ تعذر إزالة **${skipped}** رتبة.`
+                : ""
+            )
         });
 
       }
@@ -875,21 +1240,44 @@ client.on(
       // تحذير
       // ==========================================
 
-      if (interaction.commandName === "تحذير") {
+      if (
+        interaction.commandName ===
+        "تحذير"
+      ) {
 
-        const user = interaction.options.getUser("العضو");
-        const reason = interaction.options.getString("السبب") || "غير محدد";
-        const member = await interaction.guild.members.fetch(user.id);
+        const user =
+          interaction.options.getUser("العضو");
 
-        const data = loadWarnings();
-        const guildId = interaction.guild.id;
-        const userId = member.id;
+        const reason =
+          interaction.options.getString("السبب") ||
+          "غير محدد";
 
-        if (!data[guildId]) data[guildId] = {};
-        if (!data[guildId][userId]) data[guildId][userId] = 0;
+        const member =
+          await interaction.guild.members.fetch(
+            user.id
+          );
+
+        const data =
+          loadWarnings();
+
+        const guildId =
+          interaction.guild.id;
+
+        const userId =
+          member.id;
+
+        if (!data[guildId]) {
+          data[guildId] = {};
+        }
+
+        if (!data[guildId][userId]) {
+          data[guildId][userId] = 0;
+        }
 
         data[guildId][userId]++;
-        const count = data[guildId][userId];
+
+        const count =
+          data[guildId][userId];
 
         saveWarnings(data);
 
@@ -901,19 +1289,36 @@ client.on(
         });
 
         try {
-          const embed = new EmbedBuilder()
-            .setTitle("⚠️ تحذير جديد")
-            .setDescription(`تم تحذيرك في سيرفر **${interaction.guild.name}**.`)
-            .addFields(
-              { name: "السبب", value: reason },
-              { name: "عدد التحذيرات", value: `${count}` }
-            )
-            .setColor("Red")
-            .setTimestamp();
 
-          await member.send({ embeds: [embed] });
+          const embed =
+            new EmbedBuilder()
+              .setTitle("⚠️ تحذير جديد")
+              .setDescription(
+                `تم تحذيرك في سيرفر **${interaction.guild.name}**.`
+              )
+              .addFields(
+                {
+                  name: "السبب",
+                  value: reason
+                },
+                {
+                  name: "عدد التحذيرات",
+                  value: `${count}`
+                }
+              )
+              .setColor("Red")
+              .setTimestamp();
+
+          await member.send({
+            embeds: [embed]
+          });
+
         } catch {
-          console.log(`⚠️ الخاص مقفول لدى ${member.user.tag}`);
+
+          console.log(
+            `⚠️ الخاص مقفول لدى ${member.user.tag}`
+          );
+
         }
 
         return;
@@ -923,22 +1328,37 @@ client.on(
       // مسج الرتبة
       // ==========================================
 
-      if (interaction.commandName === "مسج-الرتبة") {
+      if (
+        interaction.commandName ===
+        "مسج-الرتبة"
+      ) {
 
-        const role = interaction.options.getRole("الرتبة");
-        const message = interaction.options.getString("الرسالة");
+        const role =
+          interaction.options.getRole("الرتبة");
 
-        await interaction.deferReply({ ephemeral: true });
+        const message =
+          interaction.options.getString("الرسالة");
+
+        await interaction.deferReply({
+          ephemeral: true
+        });
 
         let success = 0;
         let failed = 0;
 
-        for (const member of role.members.values()) {
+        for (
+          const member of role.members.values()
+        ) {
+
           try {
+
             await member.send(message);
             success++;
+
           } catch {
+
             failed++;
+
           }
         }
 
@@ -953,21 +1373,40 @@ client.on(
       // إرسال إيمبد
       // ==========================================
 
-      if (interaction.commandName === "ارسال-ايمبد") {
+      if (
+        interaction.commandName ===
+        "ارسال-ايمبد"
+      ) {
 
-        const channel = interaction.options.getChannel("مكان-الإرسال");
-        const insideText = interaction.options.getString("الكلام-داخل-الإيمبد");
-        const topText = interaction.options.getString("الكلام-فوق-الإيمبد");
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإرسال"
+          );
 
-        const embed = new EmbedBuilder()
-          .setDescription(insideText)
-          .setColor("Blue")
-          .setTimestamp();
+        const insideText =
+          interaction.options.getString(
+            "الكلام-داخل-الإيمبد"
+          );
 
-        await channel.send({ content: topText || "", embeds: [embed] });
+        const topText =
+          interaction.options.getString(
+            "الكلام-فوق-الإيمبد"
+          );
+
+        const embed =
+          new EmbedBuilder()
+            .setDescription(insideText)
+            .setColor("Blue")
+            .setTimestamp();
+
+        await channel.send({
+          content: topText || "",
+          embeds: [embed]
+        });
 
         return interaction.reply({
-          content: `✅ تم إرسال الإيمبد في ${channel}.`,
+          content:
+            `✅ تم إرسال الإيمبد في ${channel}.`,
           ephemeral: true
         });
 
@@ -977,21 +1416,35 @@ client.on(
       // إرسال إعلان
       // ==========================================
 
-      if (interaction.commandName === "ارسال-اعلان") {
+      if (
+        interaction.commandName ===
+        "ارسال-اعلان"
+      ) {
 
-        const channel = interaction.options.getChannel("مكان-الإعلان");
-        const message = interaction.options.getString("الرسالة");
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإعلان"
+          );
 
-        const embed = new EmbedBuilder()
-          .setTitle("📢 إعلان")
-          .setDescription(message)
-          .setColor("Blue")
-          .setTimestamp();
+        const message =
+          interaction.options.getString(
+            "الرسالة"
+          );
 
-        await channel.send({ embeds: [embed] });
+        const embed =
+          new EmbedBuilder()
+            .setTitle("📢 إعلان")
+            .setDescription(message)
+            .setColor("Blue")
+            .setTimestamp();
+
+        await channel.send({
+          embeds: [embed]
+        });
 
         return interaction.reply({
-          content: `✅ تم إرسال الإعلان في ${channel}.`,
+          content:
+            `✅ تم إرسال الإعلان في ${channel}.`,
           ephemeral: true
         });
 
@@ -1001,155 +1454,333 @@ client.on(
       // زر عداد
       // ==========================================
 
-      if (interaction.commandName === "زر-عداد") {
+      if (
+        interaction.commandName ===
+        "زر-عداد"
+      ) {
 
-        const channel = interaction.options.getChannel("مكان-الإرسال");
-        const messageText = interaction.options.getString("الرسالة");
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإرسال"
+          );
 
-        const counterId = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+        const messageText =
+          interaction.options.getString(
+            "الرسالة"
+          );
 
-        const data = loadCounters();
-        data[counterId] = { count: 0, users: [] };
+        const counterId =
+          `${Date.now()}_${Math.floor(
+            Math.random() * 100000
+          )}`;
+
+        const data =
+          loadCounters();
+
+        data[counterId] = {
+          count: 0,
+          users: []
+        };
+
         saveCounters(data);
 
-        const button = new ButtonBuilder()
-          .setCustomId(`عداد_${counterId}`)
-          .setLabel("✅ 0")
-          .setStyle(ButtonStyle.Success);
+        const button =
+          new ButtonBuilder()
+            .setCustomId(
+              `عداد_${counterId}`
+            )
+            .setLabel("✅ 0")
+            .setStyle(ButtonStyle.Success);
 
-        const row = new ActionRowBuilder().addComponents(button);
+        const row =
+          new ActionRowBuilder()
+            .addComponents(button);
 
-        await channel.send({ content: messageText, components: [row] });
+        await channel.send({
+          content: messageText,
+          components: [row]
+        });
 
         return interaction.reply({
-          content: `✅ تم إرسال الرسالة مع زر العداد في ${channel}.`,
+          content:
+            `✅ تم إرسال الرسالة مع زر العداد في ${channel}.`,
           ephemeral: true
         });
 
       }
 
       // ==========================================
-      // إضافة رد تلقائي (إدارة فقط)
+      // إضافة رد
       // ==========================================
 
-      if (interaction.commandName === "اضافة-رد") {
+      if (
+        interaction.commandName ===
+        "اضافة-رد"
+      ) {
 
-        if (!isStaff(interaction.member)) {
+        if (
+          !isStaff(interaction.member)
+        ) {
+
           return interaction.reply({
-            content: "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
             ephemeral: true
           });
+
         }
 
-        const trigger = interaction.options.getString("الكلمة");
-        const response = interaction.options.getString("الرد");
+        const trigger =
+          interaction.options.getString(
+            "الكلمة"
+          );
 
-        const data = loadAutoReplies();
+        const response =
+          interaction.options.getString(
+            "الرد"
+          );
+
+        const data =
+          loadAutoReplies();
+
         data[trigger] = response;
+
         saveAutoReplies(data);
 
         return interaction.reply({
-          content: `✅ تم حفظ الرد التلقائي على كلمة **${trigger}**.`,
+          content:
+            `✅ تم حفظ الرد التلقائي على كلمة **${trigger}**.`,
           ephemeral: true
         });
 
       }
 
       // ==========================================
-      // حذف رد تلقائي (إدارة فقط)
+      // تعديل رد
       // ==========================================
 
-      if (interaction.commandName === "حذف-رد") {
+      if (
+        interaction.commandName ===
+        "تعديل-رد"
+      ) {
 
-        if (!isStaff(interaction.member)) {
+        if (
+          !isStaff(interaction.member)
+        ) {
+
           return interaction.reply({
-            content: "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
             ephemeral: true
           });
+
         }
 
-        const trigger = interaction.options.getString("الكلمة");
-        const data = loadAutoReplies();
+        const trigger =
+          interaction.options.getString(
+            "الكلمة"
+          );
 
-        if (!data[trigger]) {
+        const newResponse =
+          interaction.options.getString(
+            "الرد-الجديد"
+          );
+
+        const data =
+          loadAutoReplies();
+
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            data,
+            trigger
+          )
+        ) {
+
           return interaction.reply({
-            content: `⚠️ لا يوجد رد مسجل على كلمة **${trigger}**.`,
+            content:
+              `⚠️ لا يوجد رد تلقائي مسجل على كلمة **${trigger}**.`,
             ephemeral: true
           });
+
+        }
+
+        data[trigger] = newResponse;
+
+        saveAutoReplies(data);
+
+        return interaction.reply({
+          content:
+            `✅ تم تعديل الرد التلقائي على كلمة **${trigger}** بنجاح.`,
+          ephemeral: true
+        });
+
+      }
+
+      // ==========================================
+      // حذف رد
+      // ==========================================
+
+      if (
+        interaction.commandName ===
+        "حذف-رد"
+      ) {
+
+        if (
+          !isStaff(interaction.member)
+        ) {
+
+          return interaction.reply({
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            ephemeral: true
+          });
+
+        }
+
+        const trigger =
+          interaction.options.getString(
+            "الكلمة"
+          );
+
+        const data =
+          loadAutoReplies();
+
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            data,
+            trigger
+          )
+        ) {
+
+          return interaction.reply({
+            content:
+              `⚠️ لا يوجد رد مسجل على كلمة **${trigger}**.`,
+            ephemeral: true
+          });
+
         }
 
         delete data[trigger];
+
         saveAutoReplies(data);
 
         return interaction.reply({
-          content: `✅ تم حذف الرد التلقائي على كلمة **${trigger}**.`,
+          content:
+            `✅ تم حذف الرد التلقائي على كلمة **${trigger}**.`,
           ephemeral: true
         });
 
       }
 
       // ==========================================
-      // قائمة الردود (إدارة فقط)
+      // قائمة الردود
       // ==========================================
 
-      if (interaction.commandName === "قائمة-الردود") {
+      if (
+        interaction.commandName ===
+        "قائمة-الردود"
+      ) {
 
-        if (!isStaff(interaction.member)) {
+        if (
+          !isStaff(interaction.member)
+        ) {
+
           return interaction.reply({
-            content: "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
             ephemeral: true
           });
+
         }
 
-        const data = loadAutoReplies();
-        const triggers = Object.keys(data);
+        const data =
+          loadAutoReplies();
 
-        if (triggers.length === 0) {
+        const triggers =
+          Object.keys(data);
+
+        if (
+          triggers.length === 0
+        ) {
+
           return interaction.reply({
-            content: "⚠️ لا توجد أي ردود تلقائية مسجلة حاليًا.",
+            content:
+              "⚠️ لا توجد أي ردود تلقائية مسجلة حاليًا.",
             ephemeral: true
           });
+
         }
 
-        const list = triggers
-          .map(t => `**${t}** ⬅️ ${data[t]}`)
-          .join("\n");
+        const list =
+          triggers
+            .map(
+              t =>
+                `**${t}** ⬅️ ${data[t]}`
+            )
+            .join("\n");
 
-        const embed = new EmbedBuilder()
-          .setTitle("📋 قائمة الردود التلقائية")
-          .setDescription(list)
-          .setColor("Blue");
+        const embed =
+          new EmbedBuilder()
+            .setTitle(
+              "📋 قائمة الردود التلقائية"
+            )
+            .setDescription(list)
+            .setColor("Blue");
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({
+          embeds: [embed],
+          ephemeral: true
+        });
 
       }
 
       // ==========================================
-      // عرض مستوى عضو
+      // مستواي
       // ==========================================
 
-      if (interaction.commandName === "مستواي") {
+      if (
+        interaction.commandName ===
+        "مستواي"
+      ) {
 
         const targetUser =
-          interaction.options.getUser("العضو") || interaction.user;
+          interaction.options.getUser(
+            "العضو"
+          ) || interaction.user;
 
-        const data = loadLevels();
-        const guildId = interaction.guild.id;
+        const data =
+          loadLevels();
+
+        const guildId =
+          interaction.guild.id;
 
         const entry =
-          (data[guildId] && data[guildId][targetUser.id]) ||
-          { xp: 0, level: 1 };
+          (
+            data[guildId] &&
+            data[guildId][targetUser.id]
+          ) ||
+          {
+            xp: 0,
+            level: 1
+          };
 
-        const embed = new EmbedBuilder()
-          .setTitle(`📊 مستوى ${targetUser.username}`)
-          .setDescription(
-            `**المستوى:** ${entry.level}\n` +
-            `**النقاط:** ${entry.xp} / ${xpNeededForLevel(entry.level)}`
-          )
-          .setColor("Green")
-          .setThumbnail(targetUser.displayAvatarURL());
+        const embed =
+          new EmbedBuilder()
+            .setTitle(
+              `📊 مستوى ${targetUser.username}`
+            )
+            .setDescription(
+              `**المستوى:** ${entry.level}\n` +
+              `**النقاط:** ${entry.xp} / ${xpNeededForLevel(entry.level)}`
+            )
+            .setColor("Green")
+            .setThumbnail(
+              targetUser.displayAvatarURL()
+            );
 
-        return interaction.reply({ embeds: [embed] });
+        return interaction.reply({
+          embeds: [embed]
+        });
 
       }
 
@@ -1157,59 +1788,121 @@ client.on(
       // المتصدرين
       // ==========================================
 
-      if (interaction.commandName === "المتصدرين") {
+      if (
+        interaction.commandName ===
+        "المتصدرين"
+      ) {
 
-        const data = loadLevels();
-        const guildId = interaction.guild.id;
-        const guildData = data[guildId] || {};
+        const data =
+          loadLevels();
 
-        const sorted = Object.entries(guildData)
-          .sort((a, b) => {
-            if (b[1].level !== a[1].level) return b[1].level - a[1].level;
-            return b[1].xp - a[1].xp;
-          })
-          .slice(0, 10);
+        const guildId =
+          interaction.guild.id;
 
-        if (sorted.length === 0) {
-          return interaction.reply("⚠️ لا يوجد أي نشاط مسجل بعد.");
+        const guildData =
+          data[guildId] || {};
+
+        const sorted =
+          Object.entries(guildData)
+            .sort((a, b) => {
+
+              if (
+                b[1].level !==
+                a[1].level
+              ) {
+
+                return (
+                  b[1].level -
+                  a[1].level
+                );
+
+              }
+
+              return (
+                b[1].xp -
+                a[1].xp
+              );
+
+            })
+            .slice(0, 10);
+
+        if (
+          sorted.length === 0
+        ) {
+
+          return interaction.reply(
+            "⚠️ لا يوجد أي نشاط مسجل بعد."
+          );
+
         }
 
-        const list = sorted
-          .map((entry, index) => {
-            return `**${index + 1}.** <@${entry[0]}> — المستوى ${entry[1].level} (${entry[1].xp} نقطة)`;
-          })
-          .join("\n");
+        const list =
+          sorted
+            .map(
+              (entry, index) =>
+                `**${index + 1}.** <@${entry[0]}> — المستوى ${entry[1].level} (${entry[1].xp} نقطة)`
+            )
+            .join("\n");
 
-        const embed = new EmbedBuilder()
-          .setTitle("🏆 قائمة المتصدرين")
-          .setDescription(list)
-          .setColor("Gold");
+        const embed =
+          new EmbedBuilder()
+            .setTitle(
+              "🏆 قائمة المتصدرين"
+            )
+            .setDescription(list)
+            .setColor("Gold");
 
-        return interaction.reply({ embeds: [embed] });
+        return interaction.reply({
+          embeds: [embed]
+        });
 
       }
 
       // ==========================================
-      // تعديل مستوى عضو (إدارة فقط)
+      // تعديل مستوى
       // ==========================================
 
-      if (interaction.commandName === "تعديل-مستوى") {
+      if (
+        interaction.commandName ===
+        "تعديل-مستوى"
+      ) {
 
-        if (!isStaff(interaction.member)) {
+        if (
+          !isStaff(interaction.member)
+        ) {
+
           return interaction.reply({
-            content: "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
             ephemeral: true
           });
+
         }
 
-        const targetUser = interaction.options.getUser("العضو");
-        const newLevel = interaction.options.getInteger("المستوى");
-        const newXp = interaction.options.getInteger("النقاط") || 0;
+        const targetUser =
+          interaction.options.getUser(
+            "العضو"
+          );
 
-        const data = loadLevels();
-        const guildId = interaction.guild.id;
+        const newLevel =
+          interaction.options.getInteger(
+            "المستوى"
+          );
 
-        if (!data[guildId]) data[guildId] = {};
+        const newXp =
+          interaction.options.getInteger(
+            "النقاط"
+          ) || 0;
+
+        const data =
+          loadLevels();
+
+        const guildId =
+          interaction.guild.id;
+
+        if (!data[guildId]) {
+          data[guildId] = {};
+        }
 
         data[guildId][targetUser.id] = {
           level: newLevel,
@@ -1219,42 +1912,65 @@ client.on(
         saveLevels(data);
 
         return interaction.reply({
-          content: `✅ تم تعديل مستوى ${targetUser} إلى **${newLevel}** بنقاط **${newXp}**.`
+          content:
+            `✅ تم تعديل مستوى ${targetUser} إلى **${newLevel}** بنقاط **${newXp}**.`
         });
 
       }
 
       // ==========================================
-      // إرسال لوحة التذاكر (إدارة فقط)
+      // لوحة التذاكر
       // ==========================================
 
-      if (interaction.commandName === "لوحة-تذاكر") {
+      if (
+        interaction.commandName ===
+        "لوحة-تذاكر"
+      ) {
 
-        if (!isStaff(interaction.member)) {
+        if (
+          !isStaff(interaction.member)
+        ) {
+
           return interaction.reply({
-            content: "❌ ليس لديك صلاحية استخدام هذا الأمر.",
+            content:
+              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
             ephemeral: true
           });
+
         }
 
-        const channel = interaction.options.getChannel("القناة");
+        const channel =
+          interaction.options.getChannel(
+            "القناة"
+          );
 
-        const embed = new EmbedBuilder()
-          .setTitle("🎫 نظام التذاكر")
-          .setDescription("اضغط الزر تحت لفتح تذكرة دعم خاصة بك.")
-          .setColor("Blue");
+        const embed =
+          new EmbedBuilder()
+            .setTitle("🎫 نظام التذاكر")
+            .setDescription(
+              "اضغط على الزر بالأسفل لفتح تذكرة خاصة بك."
+            )
+            .setColor("Blue")
+            .setTimestamp();
 
-        const button = new ButtonBuilder()
-          .setCustomId("فتح_تذكرة")
-          .setLabel("📩 فتح تذكرة")
-          .setStyle(ButtonStyle.Primary);
+        const button =
+          new ButtonBuilder()
+            .setCustomId("فتح_تذكرة")
+            .setLabel("📩 فتح تذكرة")
+            .setStyle(ButtonStyle.Primary);
 
-        const row = new ActionRowBuilder().addComponents(button);
+        const row =
+          new ActionRowBuilder()
+            .addComponents(button);
 
-        await channel.send({ embeds: [embed], components: [row] });
+        await channel.send({
+          embeds: [embed],
+          components: [row]
+        });
 
         return interaction.reply({
-          content: `✅ تم إرسال لوحة التذاكر في ${channel}.`,
+          content:
+            `✅ تم إرسال لوحة التذاكر في ${channel}.`,
           ephemeral: true
         });
 
@@ -1262,19 +1978,31 @@ client.on(
 
     } catch (error) {
 
-      console.error("❌ حدث خطأ أثناء تنفيذ الأمر:");
+      console.error(
+        "❌ حدث خطأ أثناء تنفيذ الأمر:"
+      );
+
       console.error(error);
 
-      if (interaction.replied || interaction.deferred) {
+      if (
+        interaction.replied ||
+        interaction.deferred
+      ) {
+
         await interaction.followUp({
-          content: "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
           ephemeral: true
         }).catch(() => {});
+
       } else {
+
         await interaction.reply({
-          content: "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
           ephemeral: true
         }).catch(() => {});
+
       }
 
     }
@@ -1283,14 +2011,224 @@ client.on(
 );
 
 // =========================
+// معالجة اختيار نوع التذكرة
+// =========================
+
+async function handleTicketType(
+  interaction,
+  type
+) {
+
+  if (
+    !interaction.channel ||
+    interaction.channel.type !==
+      ChannelType.GuildText
+  ) {
+
+    return interaction.reply({
+      content:
+        "❌ لا يمكن استخدام هذا الزر هنا.",
+      ephemeral: true
+    });
+
+  }
+
+  const topic =
+    interaction.channel.topic || "";
+
+  // =========================
+  // التأكد من صاحب التذكرة
+  // =========================
+
+  const ownerMatch =
+    topic.match(
+      /ticketOwner:(\d+)/
+    );
+
+  if (
+    ownerMatch &&
+    ownerMatch[1] !==
+      interaction.user.id
+  ) {
+
+    return interaction.reply({
+      content:
+        "❌ فقط صاحب التذكرة يستطيع اختيار نوع التذكرة.",
+      ephemeral: true
+    });
+
+  }
+
+  // =========================
+  // منع الاختيار مرة ثانية
+  // =========================
+
+  if (
+    topic.includes("ticketType:") &&
+    !topic.includes("ticketType:none")
+  ) {
+
+    return interaction.reply({
+      content:
+        "⚠️ تم اختيار نوع التذكرة مسبقًا، ولا يمكنك تغييره.",
+      ephemeral: true
+    });
+
+  }
+
+  let formText = "";
+  let embedTitle = "";
+
+  // =========================
+  // شكوى
+  // =========================
+
+  if (type === "شكوى") {
+
+    embedTitle =
+      "📢 نموذج تكت الشكوى";
+
+    formText =
+      `**__\n` +
+      `نموذج تكت الشكوى\n\n` +
+      `الأسم الكريم :\n` +
+      `هويتك :\n` +
+      `• الي مشتكي عليه\n` +
+      `السبب :\n` +
+      `دليلك :\n\n` +
+      `يرجى عدم العبث بالنموذج + يرجى ارفاق دليل لمشكلتك\n` +
+      `.. <@&${TICKET_STAFF_ROLE_ID}> __**`;
+
+  }
+
+  // =========================
+  // دعم فني
+  // =========================
+
+  if (type === "دعم فني") {
+
+    embedTitle =
+      "🛠️ نموذج تكت الدعم الفني";
+
+    formText =
+      `**__\n` +
+      `نموذج تكت الدعم الفني\n\n` +
+      `الأسم الكريم :\n` +
+      `هويتك :\n` +
+      `مـاهي المشكله التي تواجهها :\n` +
+      `دليلك :\n\n` +
+      `يرجى عدم العبث بالنموذج + يرجى ارفاق دليل لمشكلتك\n` +
+      `.. <@&${TICKET_STAFF_ROLE_ID}> __**`;
+
+  }
+
+  // =========================
+  // شراكة
+  // =========================
+
+  if (type === "شراكة") {
+
+    embedTitle =
+      "🤝 نموذج تكت شراكة";
+
+    formText =
+      `**__ نموذج تكت شراكة\n` +
+      `• أسم السيرفر :\n` +
+      `• عدد الأعضاء :\n` +
+      `• عليه بلاك ليست من سيرفرات معروفه ؟ :\n` +
+      `• السيرفر متفاعل ؟ :\n\n` +
+      `ملاحضه السيرفر يكون عدد أعضائه فوق ال 200 ويكون متفاعل وادارتك يخشون عندي ولو احد طلع من الؤنرات تنلغي الشراكه\n` +
+      `|| @here ||\n` +
+      `|| @everyone ||\n` +
+      `.. __**`;
+
+  }
+
+  // =========================
+  // تحديث Topic
+  // =========================
+
+  const newTopic =
+    topic.replace(
+      "ticketType:none",
+      `ticketType:${type}`
+    );
+
+  await interaction.channel.setTopic(
+    newTopic
+  ).catch(() => {});
+
+  // =========================
+  // تعطيل أزرار اختيار النوع
+  // =========================
+
+  const disabledRow =
+    createTicketTypeRow(true);
+
+  // =========================
+  // تحديث رسالة الأزرار
+  // =========================
+
+  await interaction.update({
+    components: [disabledRow]
+  });
+
+  // =========================
+  // إرسال النموذج
+  // =========================
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(embedTitle)
+      .setDescription(formText)
+      .setColor(
+        type === "شكوى"
+          ? "Red"
+          : type === "دعم فني"
+            ? "Blue"
+            : "Green"
+      )
+      .setTimestamp();
+
+  if (type === "شراكة") {
+
+    await interaction.channel.send({
+      content:
+        `@here\n@everyone`,
+      embeds: [embed],
+      allowedMentions: {
+        parse: ["everyone"]
+      }
+    });
+
+  } else {
+
+    await interaction.channel.send({
+      embeds: [embed]
+    });
+
+  }
+
+}
+
+// =========================
 // تسجيل الدخول
 // =========================
 
 client.login(TOKEN)
   .then(() => {
-    console.log("✅ تم تسجيل الدخول إلى Discord");
+
+    console.log(
+      "✅ تم تسجيل الدخول إلى Discord"
+    );
+
   })
   .catch(error => {
-    console.error("❌ فشل تسجيل الدخول:");
+
+    console.error(
+      "❌ فشل تسجيل الدخول:"
+    );
+
     console.error(error);
+
   });
