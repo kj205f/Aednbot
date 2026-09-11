@@ -9,7 +9,8 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
-  ChannelType
+  ChannelType,
+  AuditLogEvent
 } = require("discord.js");
 
 const fs = require("fs");
@@ -23,7 +24,7 @@ require("dotenv").config();
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("✅ البوت شغال");
+  res.send("✅ AN BOT شغال");
 });
 
 const PORT = process.env.PORT || 3000;
@@ -54,9 +55,10 @@ if (!TOKEN || !GUILD_ID || !CLIENT_ID) {
 
 const STAFF_ROLE_ID = "1442207394280243324";
 const TICKET_STAFF_ROLE_ID = "1441509616151298270";
+const FIXED_TICKET_LOG_ID = "1458146908747989042";
 
 // ==================================================
-// ملفات البيانات
+// الملفات
 // ==================================================
 
 const WARN_FILE = "warnings.json";
@@ -67,6 +69,7 @@ const LEVELUP_CHANNEL_FILE = "levelupchannel.json";
 
 const APPLICATION_FILE = "applications.json";
 const APPLICATION_SESSION_FILE = "application_sessions.json";
+const LOG_FILE = "logchannels.json";
 
 // ==================================================
 // البوت
@@ -78,7 +81,9 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
@@ -99,15 +104,19 @@ function loadJSON(file) {
 }
 
 function saveJSON(file, data) {
-  fs.writeFileSync(
-    file,
-    JSON.stringify(data, null, 2),
-    "utf8"
-  );
+  try {
+    fs.writeFileSync(
+      file,
+      JSON.stringify(data, null, 2),
+      "utf8"
+    );
+  } catch (error) {
+    console.error(`❌ خطأ حفظ ${file}:`, error);
+  }
 }
 
 // ==================================================
-// صلاحيات الإدارة
+// الصلاحيات
 // ==================================================
 
 function isStaff(member) {
@@ -129,7 +138,7 @@ function isTicketStaff(member) {
 }
 
 // ==================================================
-// التحذيرات
+// البيانات
 // ==================================================
 
 function getWarnings() {
@@ -140,10 +149,6 @@ function saveWarnings(data) {
   saveJSON(WARN_FILE, data);
 }
 
-// ==================================================
-// الردود التلقائية
-// ==================================================
-
 function getAutoReplies() {
   return loadJSON(AUTOREPLY_FILE);
 }
@@ -151,10 +156,6 @@ function getAutoReplies() {
 function saveAutoReplies(data) {
   saveJSON(AUTOREPLY_FILE, data);
 }
-
-// ==================================================
-// المستويات
-// ==================================================
 
 function getLevels() {
   return loadJSON(LEVELS_FILE);
@@ -164,8 +165,12 @@ function saveLevels(data) {
   saveJSON(LEVELS_FILE, data);
 }
 
-function xpNeededForLevel(level) {
-  return level * 100;
+function getCounters() {
+  return loadJSON(COUNTER_FILE);
+}
+
+function saveCounters(data) {
+  saveJSON(COUNTER_FILE, data);
 }
 
 function getLevelUpChannels() {
@@ -175,22 +180,6 @@ function getLevelUpChannels() {
 function saveLevelUpChannels(data) {
   saveJSON(LEVELUP_CHANNEL_FILE, data);
 }
-
-// ==================================================
-// العدادات
-// ==================================================
-
-function getCounters() {
-  return loadJSON(COUNTER_FILE);
-}
-
-function saveCounters(data) {
-  saveJSON(COUNTER_FILE, data);
-}
-
-// ==================================================
-// التقديمات
-// ==================================================
 
 function getApplications() {
   return loadJSON(APPLICATION_FILE);
@@ -206,6 +195,46 @@ function getApplicationSessions() {
 
 function saveApplicationSessions(data) {
   saveJSON(APPLICATION_SESSION_FILE, data);
+}
+
+function getLogs() {
+  return loadJSON(LOG_FILE);
+}
+
+function saveLogs(data) {
+  saveJSON(LOG_FILE, data);
+}
+
+// ==================================================
+// دوال عامة
+// ==================================================
+
+function truncate(text, max = 1024) {
+  text = String(text ?? "");
+
+  if (text.length <= max) {
+    return text;
+  }
+
+  return text.slice(0, max - 3) + "...";
+}
+
+function validColor(color) {
+  if (!color) {
+    return "#5865F2";
+  }
+
+  color = color.trim();
+
+  if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+    return color;
+  }
+
+  if (/^[0-9A-Fa-f]{6}$/.test(color)) {
+    return `#${color}`;
+  }
+
+  return "#5865F2";
 }
 
 // ==================================================
@@ -239,7 +268,7 @@ function addRoleOptions(command) {
 const commands = [];
 
 // ==================================================
-// 1 - إعطاء رتبة
+// إعطاء رتبة
 // ==================================================
 
 commands.push(
@@ -260,14 +289,14 @@ commands.push(
 );
 
 // ==================================================
-// 2 - إزالة رتبة
+// إزالة رتبة
 // ==================================================
 
 commands.push(
   addRoleOptions(
     new SlashCommandBuilder()
       .setName("ازالة-رتبة")
-      .setDescription("إزالة رتبة أو عدة رتب من عضو")
+      .setDescription("إزالة رتبة أو عدة رتب")
       .addUserOption(option =>
         option
           .setName("العضو")
@@ -281,13 +310,13 @@ commands.push(
 );
 
 // ==================================================
-// 3 - تحذير
+// تحذير
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("تحذير")
-    .setDescription("إعطاء عضو تحذير")
+    .setDescription("تحذير عضو")
     .addUserOption(option =>
       option
         .setName("العضو")
@@ -307,7 +336,7 @@ commands.push(
 );
 
 // ==================================================
-// 4 - مسج الرتبة
+// مسج الرتبة
 // ==================================================
 
 commands.push(
@@ -333,13 +362,13 @@ commands.push(
 );
 
 // ==================================================
-// 5 - إرسال ايمبد
+// إرسال ايمبد
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("ارسال-ايمبد")
-    .setDescription("إرسال رسالة Embed")
+    .setDescription("إرسال ايمبد")
     .addChannelOption(option =>
       option
         .setName("الروم")
@@ -350,13 +379,13 @@ commands.push(
     .addStringOption(option =>
       option
         .setName("النص")
-        .setDescription("نص الايمبد")
+        .setDescription("النص")
         .setRequired(true)
     )
     .addStringOption(option =>
       option
         .setName("العنوان")
-        .setDescription("عنوان الايمبد")
+        .setDescription("العنوان")
         .setRequired(false)
     )
     .setDefaultMemberPermissions(
@@ -366,7 +395,7 @@ commands.push(
 );
 
 // ==================================================
-// 6 - إرسال إعلان
+// إرسال إعلان
 // ==================================================
 
 commands.push(
@@ -393,7 +422,7 @@ commands.push(
 );
 
 // ==================================================
-// 7 - زر عداد
+// زر عداد
 // ==================================================
 
 commands.push(
@@ -410,7 +439,7 @@ commands.push(
     .addStringOption(option =>
       option
         .setName("الرسالة")
-        .setDescription("النص فوق العداد")
+        .setDescription("النص")
         .setRequired(true)
     )
     .setDefaultMemberPermissions(
@@ -420,7 +449,7 @@ commands.push(
 );
 
 // ==================================================
-// 8 - حذف رسائل
+// حذف رسائل
 // ==================================================
 
 commands.push(
@@ -442,7 +471,7 @@ commands.push(
 );
 
 // ==================================================
-// 9 - إضافة رد
+// إضافة رد
 // ==================================================
 
 commands.push(
@@ -468,7 +497,7 @@ commands.push(
 );
 
 // ==================================================
-// 10 - تعديل رد
+// تعديل رد
 // ==================================================
 
 commands.push(
@@ -494,7 +523,7 @@ commands.push(
 );
 
 // ==================================================
-// 11 - حذف رد
+// حذف رد
 // ==================================================
 
 commands.push(
@@ -514,13 +543,13 @@ commands.push(
 );
 
 // ==================================================
-// 12 - قائمة الردود
+// قائمة الردود
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("قائمة-الردود")
-    .setDescription("عرض الردود التلقائية")
+    .setDescription("قائمة الردود")
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages.toString()
     )
@@ -528,13 +557,13 @@ commands.push(
 );
 
 // ==================================================
-// 13 - مستواي
+// مستواي
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("مستواي")
-    .setDescription("عرض مستواك")
+    .setDescription("عرض المستوى")
     .addUserOption(option =>
       option
         .setName("العضو")
@@ -545,7 +574,7 @@ commands.push(
 );
 
 // ==================================================
-// 14 - المتصدرين
+// المتصدرين
 // ==================================================
 
 commands.push(
@@ -556,7 +585,7 @@ commands.push(
 );
 
 // ==================================================
-// 15 - تعديل مستوى
+// تعديل مستوى
 // ==================================================
 
 commands.push(
@@ -590,7 +619,7 @@ commands.push(
 );
 
 // ==================================================
-// 16 - لوحة تذاكر
+// لوحة تذاكر
 // ==================================================
 
 commands.push(
@@ -600,7 +629,7 @@ commands.push(
     .addChannelOption(option =>
       option
         .setName("الروم")
-        .setDescription("روم التذاكر")
+        .setDescription("روم اللوحة")
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true)
     )
@@ -611,17 +640,17 @@ commands.push(
 );
 
 // ==================================================
-// 17 - تحديد روم الفل
+// تحديد روم الفل
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("تحديد-روم-الفل")
-    .setDescription("تحديد روم إرسال ترقيات المستوى")
+    .setDescription("تحديد روم ترقيات المستوى")
     .addChannelOption(option =>
       option
         .setName("الروم")
-        .setDescription("روم ترقيات المستوى")
+        .setDescription("الروم")
         .addChannelTypes(ChannelType.GuildText)
         .setRequired(true)
     )
@@ -632,185 +661,116 @@ commands.push(
 );
 
 // ==================================================
-// 18 - تسطيب نظام التقديم
+// تسطيب تقديم
 // ==================================================
 
-const applicationSetupCommand =
+const setupApplication = new SlashCommandBuilder()
+  .setName("تسطيب-تقديم")
+  .setDescription("تسطيب نظام التقديم")
+
+  .addChannelOption(option =>
+    option
+      .setName("مكان-التقديم")
+      .setDescription("روم لوحة التقديم")
+      .addChannelTypes(ChannelType.GuildText)
+      .setRequired(true)
+  )
+
+  .addChannelOption(option =>
+    option
+      .setName("مكان-المراجعة")
+      .setDescription("روم مراجعة التقديمات")
+      .addChannelTypes(ChannelType.GuildText)
+      .setRequired(true)
+  )
+
+  .addRoleOption(option =>
+    option
+      .setName("رتبة-القبول")
+      .setDescription("اختياري: الرتبة بعد القبول")
+      .setRequired(false)
+  )
+
+  .addRoleOption(option =>
+    option
+      .setName("رتبة-الإزالة")
+      .setDescription("اختياري: الرتبة التي تنشال")
+      .setRequired(false)
+  )
+
+  .addStringOption(option =>
+    option
+      .setName("لون-الإيمبد")
+      .setDescription("اختياري: مثال #5865F2")
+      .setRequired(false)
+  );
+
+for (let i = 1; i <= 20; i++) {
+  setupApplication.addStringOption(option =>
+    option
+      .setName(`سؤال-${i}`)
+      .setDescription(`اختياري: السؤال رقم ${i}`)
+      .setRequired(false)
+  );
+}
+
+setupApplication.setDefaultMemberPermissions(
+  PermissionFlagsBits.ManageGuild.toString()
+);
+
+commands.push(setupApplication.toJSON());
+
+// ==================================================
+// تعديل تقديم
+// ==================================================
+
+commands.push(
   new SlashCommandBuilder()
-    .setName("تسطيب-تقديم")
-    .setDescription("تسطيب نظام التقديم بالكامل")
+    .setName("تعديل-تقديم")
+    .setDescription("تعديل رسالة إيمبد التقديم")
 
-    .addChannelOption(option =>
+    .addStringOption(option =>
       option
-        .setName("مكان-التقديم")
-        .setDescription("الروم الذي تظهر فيه لوحة التقديم")
-        .addChannelTypes(ChannelType.GuildText)
-        .setRequired(true)
-    )
-
-    .addChannelOption(option =>
-      option
-        .setName("مكان-المراجعة")
-        .setDescription("الروم الذي تصل إليه التقديمات")
-        .addChannelTypes(ChannelType.GuildText)
-        .setRequired(true)
-    )
-
-    .addRoleOption(option =>
-      option
-        .setName("رتبة-القبول")
-        .setDescription("الرتبة التي يأخذها العضو بعد القبول")
-        .setRequired(true)
-    )
-
-    .addRoleOption(option =>
-      option
-        .setName("رتبة-الإزالة")
-        .setDescription("الرتبة التي تنشال من العضو بعد القبول")
-        .setRequired(true)
+        .setName("العنوان")
+        .setDescription("عنوان الإيمبد")
+        .setRequired(false)
     )
 
     .addStringOption(option =>
       option
-        .setName("لون-الإيمبد")
-        .setDescription("مثال: #5865F2")
-        .setRequired(true)
+        .setName("الوصف")
+        .setDescription("وصف الإيمبد")
+        .setRequired(false)
     )
 
     .addStringOption(option =>
       option
-        .setName("سؤال-1")
-        .setDescription("السؤال الأول")
-        .setRequired(true)
+        .setName("اللون")
+        .setDescription("لون الإيمبد مثال #5865F2")
+        .setRequired(false)
     )
+
     .addStringOption(option =>
       option
-        .setName("سؤال-2")
-        .setDescription("السؤال الثاني")
-        .setRequired(true)
+        .setName("نص-الزر")
+        .setDescription("النص الذي يظهر على زر التقديم")
+        .setRequired(false)
     )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-3")
-        .setDescription("السؤال الثالث")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-4")
-        .setDescription("السؤال الرابع")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-5")
-        .setDescription("السؤال الخامس")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-6")
-        .setDescription("السؤال السادس")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-7")
-        .setDescription("السؤال السابع")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-8")
-        .setDescription("السؤال الثامن")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-9")
-        .setDescription("السؤال التاسع")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-10")
-        .setDescription("السؤال العاشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-11")
-        .setDescription("السؤال الحادي عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-12")
-        .setDescription("السؤال الثاني عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-13")
-        .setDescription("السؤال الثالث عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-14")
-        .setDescription("السؤال الرابع عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-15")
-        .setDescription("السؤال الخامس عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-16")
-        .setDescription("السؤال السادس عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-17")
-        .setDescription("السؤال السابع عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-18")
-        .setDescription("السؤال الثامن عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-19")
-        .setDescription("السؤال التاسع عشر")
-        .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName("سؤال-20")
-        .setDescription("السؤال العشرون")
-        .setRequired(true)
-    )
+
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild.toString()
-    );
-
-commands.push(applicationSetupCommand.toJSON());
+    )
+    .toJSON()
+);
 
 // ==================================================
-// 19 - إعادة إرسال لوحة التقديم
+// لوحة تقديم
 // ==================================================
 
 commands.push(
   new SlashCommandBuilder()
     .setName("لوحة-تقديم")
-    .setDescription("إعادة إرسال لوحة التقديم")
+    .setDescription("إرسال لوحة التقديم مرة أخرى")
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageGuild.toString()
     )
@@ -821,11 +781,13 @@ commands.push(
 // تسجيل الأوامر
 // ==================================================
 
-const rest = new REST({ version: "10" }).setToken(TOKEN);
+const rest = new REST({
+  version: "10"
+}).setToken(TOKEN);
 
 async function registerCommands() {
   try {
-    console.log("🔄 جاري تسجيل أوامر السلاش...");
+    console.log("🔄 تسجيل أوامر السلاش...");
 
     await rest.put(
       Routes.applicationGuildCommands(
@@ -837,11 +799,113 @@ async function registerCommands() {
       }
     );
 
-    console.log(`✅ تم تسجيل ${commands.length} أمر سلاش`);
+    console.log(
+      `✅ تم تسجيل ${commands.length} أمر`
+    );
   } catch (error) {
-    console.error("❌ خطأ في تسجيل الأوامر:");
-    console.error(error);
+    console.error(
+      "❌ خطأ تسجيل الأوامر:",
+      error
+    );
   }
+}
+
+// ==================================================
+// إنشاء اللوقات
+// ==================================================
+
+const LOG_CHANNELS = {
+  admin: "لوق-الإدارة",
+  members: "لوق-الأعضاء",
+  roles: "لوق-الرتب",
+  channels: "لوق-الرومات",
+  messages: "لوق-الرسائل",
+  moderation: "لوق-العقوبات",
+  voice: "لوق-الصوت",
+  tickets: "لوق-التذاكر",
+  applications: "لوق-التقديم",
+  commands: "لوق-الأوامر"
+};
+
+async function getOrCreateLogSystem(guild) {
+  const logs = getLogs();
+
+  if (!logs[guild.id]) {
+    logs[guild.id] = {};
+  }
+
+  let category = guild.channels.cache.find(
+    channel =>
+      channel.type === ChannelType.GuildCategory &&
+      channel.name === "「・لوقات・」"
+  );
+
+  if (!category) {
+    category = await guild.channels.create({
+      name: "「・لوقات・」",
+      type: ChannelType.GuildCategory
+    }).catch(() => null);
+  }
+
+  if (!category) {
+    return null;
+  }
+
+  for (const [key, name] of Object.entries(LOG_CHANNELS)) {
+    let channel = guild.channels.cache.find(
+      c =>
+        c.type === ChannelType.GuildText &&
+        c.name === name
+    );
+
+    if (!channel) {
+      channel = await guild.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        parent: category.id
+      }).catch(() => null);
+    }
+
+    if (channel) {
+      logs[guild.id][key] = channel.id;
+    }
+  }
+
+  saveLogs(logs);
+
+  return logs[guild.id];
+}
+
+async function getLogChannel(guild, type) {
+  const logs = await getOrCreateLogSystem(guild);
+
+  if (!logs) return null;
+
+  return guild.channels.cache.get(
+    logs[type]
+  ) || null;
+}
+
+async function sendLog(guild, type, embed) {
+  const channel =
+    await getLogChannel(guild, type);
+
+  if (!channel) return;
+
+  await channel.send({
+    embeds: [embed]
+  }).catch(() => {});
+}
+
+// ==================================================
+// لوق Embed
+// ==================================================
+
+function logEmbed(title, color = "#5865F2") {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setColor(color)
+    .setTimestamp();
 }
 
 // ==================================================
@@ -876,18 +940,14 @@ function findOpenTicket(guild, userId) {
       return false;
     }
 
-    if (!channel.topic) {
-      return false;
-    }
-
-    return channel.topic.includes(
+    return channel.topic?.includes(
       `ticketOwner:${userId}`
     );
   });
 }
 
 // ==================================================
-// أنواع التذاكر
+// أزرار التذاكر
 // ==================================================
 
 function ticketTypeRow(disabled = false) {
@@ -912,6 +972,16 @@ function ticketTypeRow(disabled = false) {
       .setEmoji("🤝")
       .setStyle(ButtonStyle.Success)
       .setDisabled(disabled)
+  );
+}
+
+function ticketCloseRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("اغلاق_تذكرة")
+      .setLabel("إغلاق التذكرة")
+      .setEmoji("🔒")
+      .setStyle(ButtonStyle.Danger)
   );
 }
 
@@ -969,105 +1039,7 @@ function partnershipForm() {
 
 ملاحضه السيرفر يكون عدد أعضائه فوق ال 200 ويكون متفاعل وادارتك يخشون عندي ولو احد طلع من الؤنرات تنلغي الشراكه
 
-|| @here ||
-
-|| @everyone ||
-
-.. __**`;
-}
-
-// ==================================================
-// لوق التذاكر
-// ==================================================
-
-async function sendTicketLog(guild, embed) {
-
-  let logChannel =
-    guild.channels.cache.find(
-      c =>
-        c.type === ChannelType.GuildText &&
-        c.name === "لوق-التذاكر"
-    );
-
-  if (!logChannel) {
-
-    let category =
-      guild.channels.cache.find(
-        c =>
-          c.type === ChannelType.GuildCategory &&
-          c.name === "「・لوقات・」"
-      );
-
-    if (!category) {
-      category =
-        await guild.channels.create({
-          name: "「・لوقات・」",
-          type: ChannelType.GuildCategory
-        }).catch(() => null);
-    }
-
-    if (category) {
-      logChannel =
-        await guild.channels.create({
-          name: "لوق-التذاكر",
-          type: ChannelType.GuildText,
-          parent: category.id
-        }).catch(() => null);
-    }
-  }
-
-  if (!logChannel) return;
-
-  await logChannel.send({
-    embeds: [embed]
-  }).catch(() => {});
-}
-
-// ==================================================
-// لوق التقديم
-// ==================================================
-
-async function sendApplicationLog(guild, embed) {
-
-  let logChannel =
-    guild.channels.cache.find(
-      c =>
-        c.type === ChannelType.GuildText &&
-        c.name === "لوق-التقديم"
-    );
-
-  if (!logChannel) {
-
-    let category =
-      guild.channels.cache.find(
-        c =>
-          c.type === ChannelType.GuildCategory &&
-          c.name === "「・لوقات・」"
-      );
-
-    if (!category) {
-      category =
-        await guild.channels.create({
-          name: "「・لوقات・」",
-          type: ChannelType.GuildCategory
-        }).catch(() => null);
-    }
-
-    if (category) {
-      logChannel =
-        await guild.channels.create({
-          name: "لوق-التقديم",
-          type: ChannelType.GuildText,
-          parent: category.id
-        }).catch(() => null);
-    }
-  }
-
-  if (!logChannel) return;
-
-  await logChannel.send({
-    embeds: [embed]
-  }).catch(() => {});
+.. <@&${TICKET_STAFF_ROLE_ID}> __**`;
 }
 
 // ==================================================
@@ -1075,90 +1047,21 @@ async function sendApplicationLog(guild, embed) {
 // ==================================================
 
 function getApplicationConfig(guildId) {
+  const data = getApplications();
 
-  const applications =
-    getApplications();
-
-  return applications[guildId]?.config || null;
+  return data[guildId]?.config || null;
 }
 
 function saveApplicationConfig(guildId, config) {
+  const data = getApplications();
 
-  const applications =
-    getApplications();
-
-  if (!applications[guildId]) {
-    applications[guildId] = {};
+  if (!data[guildId]) {
+    data[guildId] = {};
   }
 
-  applications[guildId].config = config;
+  data[guildId].config = config;
 
-  saveApplications(applications);
-}
-
-// ==================================================
-// لون الإيمبد
-// ==================================================
-
-function validColor(color) {
-
-  if (!color) {
-    return "#5865F2";
-  }
-
-  const value =
-    color.trim();
-
-  if (
-    /^#[0-9A-Fa-f]{6}$/.test(value)
-  ) {
-    return value;
-  }
-
-  if (
-    /^#[0-9A-Fa-f]{3}$/.test(value)
-  ) {
-    return value;
-  }
-
-  return "#5865F2";
-}
-
-// ==================================================
-// لوحة التقديم
-// ==================================================
-
-function applicationPanel(config) {
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle("📋 التقديم على الإدارة")
-      .setDescription(
-        "للتقديم على الإدارة اضغط على الزر بالأسفل.\n\n" +
-        "سيتم إرسال أسئلة التقديم لك في الخاص، " +
-        "ويجب الإجابة على جميع الأسئلة بالترتيب."
-      )
-      .addFields({
-        name: "📝 عدد الأسئلة",
-        value: "20 سؤال",
-        inline: true
-      })
-      .setColor(validColor(config.color))
-      .setTimestamp();
-
-  const button =
-    new ButtonBuilder()
-      .setCustomId("بدء_التقديم")
-      .setLabel("بدء التقديم")
-      .setEmoji("📝")
-      .setStyle(ButtonStyle.Primary);
-
-  return {
-    embeds: [embed],
-    components: [
-      new ActionRowBuilder().addComponents(button)
-    ]
-  };
+  saveApplications(data);
 }
 
 // ==================================================
@@ -1166,110 +1069,78 @@ function applicationPanel(config) {
 // ==================================================
 
 function getQuestions(config) {
-
   const questions = [];
 
   for (let i = 1; i <= 20; i++) {
-    questions.push(
-      config[`question${i}`]
-    );
+    const question =
+      config[`question${i}`];
+
+    if (
+      question &&
+      question.trim()
+    ) {
+      questions.push(question.trim());
+    }
   }
 
   return questions;
 }
 
 // ==================================================
-// إرسال التقديم للمراجعة
+// إيمبد لوحة التقديم
 // ==================================================
 
-async function sendApplicationForReview({
-  guild,
-  user,
-  answers,
-  config,
-  applicationId
-}) {
-
-  const reviewChannel =
-    guild.channels.cache.get(
-      config.reviewChannelId
-    );
-
-  if (!reviewChannel) {
-    return false;
-  }
+function buildApplicationPanel(config) {
+  const botAvatar =
+    client.user.displayAvatarURL({
+      extension: "png",
+      size: 1024
+    });
 
   const embed =
     new EmbedBuilder()
-      .setTitle(`📋 تقديم جديد #${applicationId}`)
+      .setTitle(
+        config.title ||
+        "📋 التقديم على الإدارة"
+      )
       .setDescription(
-        `👤 المتقدم: ${user}\n` +
-        `🆔 الآيدي: \`${user.id}\`\n\n` +
-        `يرجى مراجعة إجابات المتقدم قبل اتخاذ القرار.`
+        config.description ||
+        "للتقديم على الإدارة اضغط على الزر بالأسفل.\n\nسيتم إرسال أسئلة التقديم لك في الخاص سؤالًا بعد سؤال."
       )
-      .setColor(validColor(config.color))
-      .setThumbnail(
-        user.displayAvatarURL({
-          dynamic: true
-        })
+      .setColor(
+        validColor(config.color)
       )
+      .setThumbnail(botAvatar)
       .setTimestamp();
 
-  const questions =
-    getQuestions(config);
+  const button =
+    new ButtonBuilder()
+      .setCustomId(
+        "بدء_التقديم"
+      )
+      .setLabel(
+        config.buttonLabel ||
+        "بدء التقديم"
+      )
+      .setEmoji("📝")
+      .setStyle(
+        ButtonStyle.Primary
+      );
 
-  for (let i = 0; i < questions.length; i++) {
-
-    let answer =
-      answers[i] ||
-      "لم تتم الإجابة";
-
-    if (answer.length > 1024) {
-      answer =
-        answer.slice(0, 1021) + "...";
-    }
-
-    embed.addFields({
-      name: `${i + 1}️⃣ ${questions[i]}`.slice(0, 256),
-      value: answer,
-      inline: false
-    });
-  }
-
-  const buttons =
-    new ActionRowBuilder().addComponents(
-
-      new ButtonBuilder()
-        .setCustomId(
-          `قبول_تقديم_${applicationId}`
-        )
-        .setLabel("قبول")
-        .setEmoji("✅")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId(
-          `رفض_تقديم_${applicationId}`
-        )
-        .setLabel("رفض")
-        .setEmoji("❌")
-        .setStyle(ButtonStyle.Danger)
-    );
-
-  await reviewChannel.send({
+  return {
     embeds: [embed],
-    components: [buttons]
-  });
-
-  return true;
+    components: [
+      new ActionRowBuilder()
+        .addComponents(button)
+    ]
+  };
 }
 
 // ==================================================
-// نظام التقديم
+// تشغيل التقديم
 // ==================================================
 
 async function startApplication(interaction) {
-
   const config =
     getApplicationConfig(
       interaction.guild.id
@@ -1278,46 +1149,53 @@ async function startApplication(interaction) {
   if (!config) {
     return interaction.reply({
       content:
-        "❌ نظام التقديم غير مسطب. استخدم `/تسطيب-تقديم` أولاً.",
+        "❌ نظام التقديم غير مسطب.\nاستخدم `/تسطيب-تقديم` أولاً.",
       ephemeral: true
     });
   }
 
-  const existingSessions =
-    getApplicationSessions();
+  const questions =
+    getQuestions(config);
 
-  const sessionKey =
-    `${interaction.guild.id}_${interaction.user.id}`;
-
-  if (existingSessions[sessionKey]) {
+  if (questions.length === 0) {
     return interaction.reply({
       content:
-        "❌ عندك تقديم قيد التنفيذ بالفعل. راجع الخاص.",
+        "❌ ما فيه أسئلة مضافة للتقديم.\nأضف سؤالًا واحدًا على الأقل باستخدام `/تسطيب-تقديم`.",
       ephemeral: true
     });
   }
 
-  const member =
-    interaction.member;
+  const sessions =
+    getApplicationSessions();
+
+  const key =
+    `${interaction.guild.id}_${interaction.user.id}`;
+
+  if (sessions[key]) {
+    return interaction.reply({
+      content:
+        "❌ عندك تقديم قيد التنفيذ بالفعل، راجع الخاص.",
+      ephemeral: true
+    });
+  }
 
   try {
     await interaction.user.send(
-      `📋 **بدأ التقديم في ${interaction.guild.name}**\n\n` +
-      `سيتم إرسال **20 سؤال** لك.\n` +
-      `أجب على كل سؤال برسالة منفصلة.\n\n` +
-      `⏱️ لديك **5 دقائق** للإجابة على كل سؤال.`
+      `📋 **بدأ تقديمك في ${interaction.guild.name}**\n\n` +
+      `عدد الأسئلة: **${questions.length}**\n` +
+      `أجب على كل سؤال برسالة منفصلة.\n` +
+      `⏱️ لديك 5 دقائق لكل سؤال.\n\n` +
+      `لإلغاء التقديم اكتب: **الغاء**`
     );
   } catch {
-
     return interaction.reply({
       content:
-        "❌ ما قدرت أرسل لك في الخاص.\n\n" +
-        "افتح الخاص مع أعضاء السيرفر ثم حاول مرة ثانية.",
+        "❌ ما قدرت أرسل لك رسالة خاصة.\nافتح الخاص مع أعضاء السيرفر وحاول مرة ثانية.",
       ephemeral: true
     });
   }
 
-  existingSessions[sessionKey] = {
+  sessions[key] = {
     guildId: interaction.guild.id,
     userId: interaction.user.id,
     startedAt: Date.now(),
@@ -1325,42 +1203,35 @@ async function startApplication(interaction) {
   };
 
   saveApplicationSessions(
-    existingSessions
+    sessions
   );
 
   await interaction.reply({
     content:
-      "✅ تم بدء التقديم.\n📩 راجع الخاص لإكمال الأسئلة.",
+      "✅ تم بدء التقديم، راجع الخاص.",
     ephemeral: true
   });
 
   const dm =
     await interaction.user.createDM();
 
-  const questions =
-    getQuestions(config);
-
   const answers = [];
 
-  for (let i = 0; i < questions.length; i++) {
-
-    const questionMessage =
-      await dm.send(
-        `**السؤال ${i + 1} من 20**\n\n${questions[i]}`
-      ).catch(() => null);
-
-    if (!questionMessage) {
-      break;
-    }
+  for (
+    let index = 0;
+    index < questions.length;
+    index++
+  ) {
+    await dm.send(
+      `**السؤال ${index + 1} من ${questions.length}**\n\n${questions[index]}`
+    ).catch(() => null);
 
     const collected =
       await dm.awaitMessages({
         filter: message =>
           message.author.id ===
           interaction.user.id,
-
         max: 1,
-
         time: 5 * 60 * 1000
       }).catch(() => null);
 
@@ -1368,31 +1239,38 @@ async function startApplication(interaction) {
       !collected ||
       collected.size === 0
     ) {
-
       await dm.send(
-        "❌ انتهى وقت الإجابة على السؤال.\n" +
-        "يمكنك بدء تقديم جديد من لوحة التقديم."
+        "❌ انتهى وقت الإجابة.\nيمكنك بدء تقديم جديد من لوحة التقديم."
       ).catch(() => {});
 
-      delete existingSessions[sessionKey];
-
-      saveApplicationSessions(
-        existingSessions
-      );
-
+      delete sessions[key];
+      saveApplicationSessions(sessions);
       return;
     }
 
     const answer =
       collected.first().content.trim();
 
+    if (
+      answer.toLowerCase() ===
+      "الغاء"
+    ) {
+      await dm.send(
+        "❌ تم إلغاء التقديم."
+      ).catch(() => {});
+
+      delete sessions[key];
+      saveApplicationSessions(sessions);
+      return;
+    }
+
     answers.push(answer);
 
-    existingSessions[sessionKey].answers =
+    sessions[key].answers =
       answers;
 
     saveApplicationSessions(
-      existingSessions
+      sessions
     );
   }
 
@@ -1403,22 +1281,38 @@ async function startApplication(interaction) {
     applications[interaction.guild.id] = {};
   }
 
-  if (!applications[interaction.guild.id].counter) {
-    applications[interaction.guild.id].counter = 0;
+  if (
+    !applications[
+      interaction.guild.id
+    ].counter
+  ) {
+    applications[
+      interaction.guild.id
+    ].counter = 0;
   }
 
-  applications[interaction.guild.id].counter++;
+  applications[
+    interaction.guild.id
+  ].counter++;
 
   const applicationId =
-    applications[interaction.guild.id].counter;
+    applications[
+      interaction.guild.id
+    ].counter;
 
-  if (!applications[interaction.guild.id].records) {
-    applications[interaction.guild.id].records = {};
+  if (
+    !applications[
+      interaction.guild.id
+    ].records
+  ) {
+    applications[
+      interaction.guild.id
+    ].records = {};
   }
 
-  applications[interaction.guild.id].records[
-    applicationId
-  ] = {
+  applications[
+    interaction.guild.id
+  ].records[applicationId] = {
     id: applicationId,
     guildId: interaction.guild.id,
     userId: interaction.user.id,
@@ -1428,58 +1322,135 @@ async function startApplication(interaction) {
     createdAt: Date.now()
   };
 
-  saveApplications(applications);
-
-  delete existingSessions[sessionKey];
-
-  saveApplicationSessions(
-    existingSessions
+  saveApplications(
+    applications
   );
 
-  const sent =
-    await sendApplicationForReview({
-      guild: interaction.guild,
-      user: interaction.user,
-      answers,
-      config,
-      applicationId
-    });
+  delete sessions[key];
+  saveApplicationSessions(sessions);
 
-  if (!sent) {
+  const reviewChannel =
+    interaction.guild.channels.cache.get(
+      config.reviewChannelId
+    );
 
+  if (!reviewChannel) {
     await dm.send(
-      "❌ حصلت مشكلة في إرسال تقديمك للإدارة."
+      "❌ روم المراجعة غير موجود، تواصل مع الإدارة."
     ).catch(() => {});
-
     return;
   }
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        `📋 تقديم جديد #${applicationId}`
+      )
+      .setDescription(
+        `👤 المتقدم: ${interaction.user}\n` +
+        `🆔 الآيدي: \`${interaction.user.id}\`\n\n` +
+        `⏳ الحالة: **قيد المراجعة**`
+      )
+      .setColor(
+        validColor(config.color)
+      )
+      .setThumbnail(
+        interaction.user.displayAvatarURL({
+          dynamic: true
+        })
+      )
+      .setTimestamp();
+
+  for (
+    let i = 0;
+    i < questions.length;
+    i++
+  ) {
+    embed.addFields({
+      name: `${i + 1}️⃣ ${truncate(questions[i], 240)}`,
+      value: truncate(
+        answers[i] ||
+        "لم تتم الإجابة",
+        1024
+      ),
+      inline: false
+    });
+  }
+
+  const buttons =
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          `قبول_تقديم_${applicationId}`
+        )
+        .setLabel("قبول")
+        .setEmoji("✅")
+        .setStyle(
+          ButtonStyle.Success
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          `رفض_تقديم_${applicationId}`
+        )
+        .setLabel("رفض")
+        .setEmoji("❌")
+        .setStyle(
+          ButtonStyle.Danger
+        )
+    );
+
+  await reviewChannel.send({
+    embeds: [embed],
+    components: [buttons]
+  });
 
   await dm.send(
     `✅ تم إرسال تقديمك بنجاح.\n\n` +
     `🔢 رقم التقديم: **#${applicationId}**\n` +
     `⏳ الحالة: **قيد المراجعة**`
   ).catch(() => {});
+
+  await sendLog(
+    interaction.guild,
+    "applications",
+    logEmbed(
+      "📝 تقديم جديد",
+      "#5865F2"
+    )
+      .addFields(
+        {
+          name: "👤 المتقدم",
+          value: `${interaction.user}`,
+          inline: true
+        },
+        {
+          name: "🔢 رقم التقديم",
+          value: `#${applicationId}`,
+          inline: true
+        }
+      )
+  );
 }
 
 // ==================================================
-// جاهزية البوت
+// جاهزية
 // ==================================================
 
-const xpCooldown = new Map();
-
 client.once("ready", async () => {
-
   console.log(
     `✅ تم تسجيل الدخول باسم ${client.user.tag}`
   );
 
-  console.log("🤖 البوت جاهز");
+  await registerCommands();
+
+  for (const guild of client.guilds.cache.values()) {
+    await getOrCreateLogSystem(guild);
+  }
 
   console.log(
-    `📦 عدد أوامر السلاش: ${commands.length}`
+    "📚 تم تجهيز نظام اللوقات"
   );
-
-  await registerCommands();
 });
 
 // ==================================================
@@ -1497,29 +1468,28 @@ client.on(
     if (interaction.isButton()) {
 
       // ==================================================
-      // فتح التذكرة
+      // فتح تذكرة
       // ==================================================
 
       if (
         interaction.customId ===
         "فتح_تذكرة"
       ) {
-
-        const existingTicket =
+        const existing =
           findOpenTicket(
             interaction.guild,
             interaction.user.id
           );
 
-        if (existingTicket) {
+        if (existing) {
           return interaction.reply({
             content:
-              `❌ عندك تذكرة مفتوحة بالفعل: ${existingTicket}`,
+              `❌ عندك تذكرة مفتوحة بالفعل: ${existing}`,
             ephemeral: true
           });
         }
 
-        const ticketNumber =
+        const number =
           getNextTicketNumber(
             interaction.guild.id
           );
@@ -1534,40 +1504,37 @@ client.on(
             .slice(0, 20) ||
           "عضو";
 
-        const channelName =
-          `تذكرة-${ticketNumber}-${username}`;
-
         const channel =
           await interaction.guild.channels.create({
-            name: channelName,
-            type: ChannelType.GuildText,
+            name:
+              `تذكرة-${number}-${username}`,
+
+            type:
+              ChannelType.GuildText,
 
             topic:
-              `ticketOwner:${interaction.user.id}|ticketNumber:${ticketNumber}|ticketType:none`,
+              `ticketOwner:${interaction.user.id}|ticketNumber:${number}|ticketType:none`,
 
             permissionOverwrites: [
               {
                 id:
                   interaction.guild.roles.everyone.id,
-
                 deny: [
                   PermissionFlagsBits.ViewChannel
                 ]
               },
-
               {
-                id: interaction.user.id,
-
+                id:
+                  interaction.user.id,
                 allow: [
                   PermissionFlagsBits.ViewChannel,
                   PermissionFlagsBits.SendMessages,
                   PermissionFlagsBits.ReadMessageHistory
                 ]
               },
-
               {
-                id: TICKET_STAFF_ROLE_ID,
-
+                id:
+                  TICKET_STAFF_ROLE_ID,
                 allow: [
                   PermissionFlagsBits.ViewChannel,
                   PermissionFlagsBits.SendMessages,
@@ -1576,109 +1543,101 @@ client.on(
               }
             ]
           })
-          .catch(error => {
-
-            console.error(
-              "❌ خطأ إنشاء التذكرة:",
-              error
-            );
-
-            return null;
-          });
+          .catch(() => null);
 
         if (!channel) {
-
           return interaction.reply({
             content:
-              "❌ ما قدرت أنشئ التذكرة. تأكد أن البوت عنده صلاحية إدارة الرومات وإدارة الصلاحيات.",
+              "❌ ما قدرت أنشئ التذكرة.",
             ephemeral: true
           });
         }
 
-        const welcomeEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "🎫 مرحباً بك في تذكرتك"
-            )
-            .setDescription(
-              `أهلًا وسهلًا ${interaction.user}\n\nاختر نوع التكت المناسب لك من الأزرار بالأسفل.`
-            )
-            .setColor("Blue")
-            .setTimestamp();
-
         await channel.send({
-          embeds: [welcomeEmbed],
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🎫 مرحبًا بك في تذكرتك")
+              .setDescription(
+                `أهلًا ${interaction.user}\n\nاختر نوع التكت المناسب لك.`
+              )
+              .setColor("Blue")
+              .setTimestamp()
+          ],
           components: [
-            ticketTypeRow(false)
+            ticketTypeRow()
           ]
         });
 
-        const closeEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "🔒 إغلاق التذكرة"
-            )
-            .setDescription(
-              "عند الانتهاء من التذكرة يمكنك الضغط على الزر بالأسفل لإغلاقها."
-            )
-            .setColor("Red")
-            .setTimestamp();
-
-        const closeButton =
-          new ActionRowBuilder()
-            .addComponents(
-              new ButtonBuilder()
-                .setCustomId(
-                  "اغلاق_تذكرة"
-                )
-                .setLabel(
-                  "إغلاق التذكرة"
-                )
-                .setEmoji("🔒")
-                .setStyle(
-                  ButtonStyle.Danger
-                )
-            );
-
         await channel.send({
-          embeds: [closeEmbed],
-          components: [closeButton]
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🔒 إغلاق التذكرة")
+              .setDescription(
+                "بعد الانتهاء اضغط على زر إغلاق التذكرة."
+              )
+              .setColor("Red")
+              .setTimestamp()
+          ],
+          components: [
+            ticketCloseRow()
+          ]
         });
 
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "🎫 فتح تذكرة جديدة"
-            )
-            .setColor("Blue")
-            .addFields(
-              {
-                name: "👤 صاحب التذكرة",
-                value: `${interaction.user}`,
-                inline: true
-              },
-              {
-                name: "🔢 رقم التذكرة",
-                value: `${ticketNumber}`,
-                inline: true
-              },
-              {
-                name: "📁 التذكرة",
-                value: `${channel}`,
-                inline: true
-              },
-              {
-                name: "📌 النوع",
-                value: "لم يتم التحديد",
-                inline: true
-              }
-            )
-            .setTimestamp();
-
-        await sendTicketLog(
+        await sendLog(
           interaction.guild,
-          logEmbed
+          "tickets",
+          logEmbed(
+            "🎫 فتح تذكرة",
+            "Green"
+          ).addFields(
+            {
+              name: "👤 العضو",
+              value: `${interaction.user}`,
+              inline: true
+            },
+            {
+              name: "🔢 الرقم",
+              value: `${number}`,
+              inline: true
+            },
+            {
+              name: "📁 الروم",
+              value: `${channel}`,
+              inline: true
+            }
+          )
         );
+
+        // يرسل أيضًا للروم القديم إذا كان موجودًا
+        const fixedLog =
+          interaction.guild.channels.cache.get(
+            FIXED_TICKET_LOG_ID
+          );
+
+        if (
+          fixedLog &&
+          fixedLog.isTextBased()
+        ) {
+          await fixedLog.send({
+            embeds: [
+              logEmbed(
+                "🎫 فتح تذكرة",
+                "Green"
+              ).addFields(
+                {
+                  name: "👤 العضو",
+                  value: `${interaction.user}`,
+                  inline: true
+                },
+                {
+                  name: "📁 الروم",
+                  value: `${channel}`,
+                  inline: true
+                }
+              )
+            ]
+          }).catch(() => {});
+        }
 
         return interaction.reply({
           content:
@@ -1688,49 +1647,59 @@ client.on(
       }
 
       // ==================================================
-      // شكوى
+      // أنواع التذاكر
       // ==================================================
 
-      if (
-        interaction.customId ===
-        "نوع_تذكرة_شكوى"
-      ) {
+      const ticketTypes = {
+        "نوع_تذكرة_شكوى": {
+          name: "شكوى",
+          form: complaintForm()
+        },
+        "نوع_تذكرة_دعم": {
+          name: "دعم فني",
+          form: supportForm()
+        },
+        "نوع_تذكرة_شراكة": {
+          name: "شراكة",
+          form: partnershipForm()
+        }
+      };
 
-        const ownerMatch =
+      if (
+        ticketTypes[
+          interaction.customId
+        ]
+      ) {
+        const owner =
           interaction.channel.topic?.match(
             /ticketOwner:(\d+)/
-          );
-
-        if (!ownerMatch) {
-          return interaction.reply({
-            content:
-              "❌ هذه ليست تذكرة صحيحة.",
-            ephemeral: true
-          });
-        }
-
-        const ownerId =
-          ownerMatch[1];
+          )?.[1];
 
         if (
-          interaction.user.id !==
-          ownerId
+          owner !==
+          interaction.user.id
         ) {
           return interaction.reply({
             content:
-              "❌ فقط صاحب التذكرة يقدر يحدد نوعها.",
+              "❌ فقط صاحب التذكرة يحدد نوعها.",
             ephemeral: true
           });
         }
 
-        const newTopic =
-          interaction.channel.topic.replace(
-            "ticketType:none",
-            "ticketType:شكوى"
-          );
+        const type =
+          ticketTypes[
+            interaction.customId
+          ];
+
+        const topic =
+          interaction.channel.topic
+            .replace(
+              "ticketType:none",
+              `ticketType:${type.name}`
+            );
 
         await interaction.channel.setTopic(
-          newTopic
+          topic
         );
 
         await interaction.update({
@@ -1740,8 +1709,7 @@ client.on(
         });
 
         await interaction.channel.send({
-          content: complaintForm(),
-
+          content: type.form,
           allowedMentions: {
             roles: [
               TICKET_STAFF_ROLE_ID
@@ -1749,137 +1717,30 @@ client.on(
           }
         });
 
-        return;
-      }
-
-      // ==================================================
-      // دعم
-      // ==================================================
-
-      if (
-        interaction.customId ===
-        "نوع_تذكرة_دعم"
-      ) {
-
-        const ownerMatch =
-          interaction.channel.topic?.match(
-            /ticketOwner:(\d+)/
-          );
-
-        if (!ownerMatch) {
-          return interaction.reply({
-            content:
-              "❌ هذه ليست تذكرة صحيحة.",
-            ephemeral: true
-          });
-        }
-
-        const ownerId =
-          ownerMatch[1];
-
-        if (
-          interaction.user.id !==
-          ownerId
-        ) {
-          return interaction.reply({
-            content:
-              "❌ فقط صاحب التذكرة يقدر يحدد نوعها.",
-            ephemeral: true
-          });
-        }
-
-        const newTopic =
-          interaction.channel.topic.replace(
-            "ticketType:none",
-            "ticketType:دعم فني"
-          );
-
-        await interaction.channel.setTopic(
-          newTopic
+        await sendLog(
+          interaction.guild,
+          "tickets",
+          logEmbed(
+            "📌 تحديد نوع تذكرة",
+            "Blue"
+          ).addFields(
+            {
+              name: "👤 العضو",
+              value: `${interaction.user}`,
+              inline: true
+            },
+            {
+              name: "📌 النوع",
+              value: type.name,
+              inline: true
+            },
+            {
+              name: "📁 الروم",
+              value: `${interaction.channel}`,
+              inline: true
+            }
+          )
         );
-
-        await interaction.update({
-          components: [
-            ticketTypeRow(true)
-          ]
-        });
-
-        await interaction.channel.send({
-          content: supportForm(),
-
-          allowedMentions: {
-            roles: [
-              TICKET_STAFF_ROLE_ID
-            ]
-          }
-        });
-
-        return;
-      }
-
-      // ==================================================
-      // شراكة
-      // ==================================================
-
-      if (
-        interaction.customId ===
-        "نوع_تذكرة_شراكة"
-      ) {
-
-        const ownerMatch =
-          interaction.channel.topic?.match(
-            /ticketOwner:(\d+)/
-          );
-
-        if (!ownerMatch) {
-          return interaction.reply({
-            content:
-              "❌ هذه ليست تذكرة صحيحة.",
-            ephemeral: true
-          });
-        }
-
-        const ownerId =
-          ownerMatch[1];
-
-        if (
-          interaction.user.id !==
-          ownerId
-        ) {
-          return interaction.reply({
-            content:
-              "❌ فقط صاحب التذكرة يقدر يحدد نوعها.",
-            ephemeral: true
-          });
-        }
-
-        const newTopic =
-          interaction.channel.topic.replace(
-            "ticketType:none",
-            "ticketType:شراكة"
-          );
-
-        await interaction.channel.setTopic(
-          newTopic
-        );
-
-        await interaction.update({
-          components: [
-            ticketTypeRow(true)
-          ]
-        });
-
-        await interaction.channel.send({
-          content:
-            partnershipForm(),
-
-          allowedMentions: {
-            parse: ["everyone"],
-            roles: [
-              TICKET_STAFF_ROLE_ID
-            ]
-          }
-        });
 
         return;
       }
@@ -1892,200 +1753,81 @@ client.on(
         interaction.customId ===
         "اغلاق_تذكرة"
       ) {
-
-        const ownerMatch =
+        const owner =
           interaction.channel.topic?.match(
             /ticketOwner:(\d+)/
-          );
+          )?.[1];
 
-        const numberMatch =
+        const number =
           interaction.channel.topic?.match(
             /ticketNumber:(\d+)/
-          );
+          )?.[1] ||
+          "غير معروف";
 
-        const typeMatch =
+        const type =
           interaction.channel.topic?.match(
             /ticketType:([^|]+)/
-          );
-
-        const ownerId =
-          ownerMatch?.[1] ||
-          "غير معروف";
-
-        const ticketNumber =
-          numberMatch?.[1] ||
-          "غير معروف";
-
-        const ticketType =
-          typeMatch?.[1] ||
+          )?.[1] ||
           "غير محدد";
 
-        const allowed =
-          interaction.user.id ===
-            ownerId ||
-          isTicketStaff(
-            interaction.member
-          );
-
-        if (!allowed) {
-          return interaction.reply({
-            content:
-              "❌ ما عندك صلاحية لإغلاق التذكرة.",
-            ephemeral: true
-          });
-        }
-
-        const closingEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "🔒 جاري إغلاق التذكرة"
-            )
-            .setDescription(
-              "سيتم حذف التذكرة خلال **5 ثواني**."
-            )
-            .setColor("Red")
-            .setTimestamp();
-
-        await interaction.reply({
-          embeds: [closingEmbed]
-        });
-
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "🔒 إغلاق تذكرة"
-            )
-            .setColor("Red")
-            .addFields(
-              {
-                name:
-                  "👤 صاحب التذكرة",
-                value:
-                  `<@${ownerId}>`,
-                inline: true
-              },
-              {
-                name:
-                  "🔢 رقم التذكرة",
-                value:
-                  `${ticketNumber}`,
-                inline: true
-              },
-              {
-                name:
-                  "📌 النوع",
-                value:
-                  `${ticketType}`,
-                inline: true
-              },
-              {
-                name:
-                  "👮 أغلقها",
-                value:
-                  `${interaction.user}`,
-                inline: true
-              },
-              {
-                name:
-                  "📁 الروم",
-                value:
-                  `${interaction.channel.name}`,
-                inline: true
-              }
-            )
-            .setTimestamp();
-
-        await sendTicketLog(
-          interaction.guild,
-          logEmbed
-        );
-
-        setTimeout(
-          async () => {
-            await interaction.channel
-              .delete()
-              .catch(() => {});
-          },
-          5000
-        );
-
-        return;
-      }
-
-      // ==================================================
-      // العداد
-      // ==================================================
-
-      if (
-        interaction.customId.startsWith(
-          "عداد_"
-        )
-      ) {
-
-        const counterId =
-          interaction.customId.replace(
-            "عداد_",
-            ""
-          );
-
-        const counters =
-          getCounters();
-
-        if (!counters[counterId]) {
-          return interaction.reply({
-            content:
-              "❌ هذا العداد غير موجود.",
-            ephemeral: true
-          });
-        }
-
-        const counter =
-          counters[counterId];
-
-        if (!counter.users) {
-          counter.users = [];
-        }
-
         if (
-          counter.users.includes(
-            interaction.user.id
+          interaction.user.id !== owner &&
+          !isTicketStaff(
+            interaction.member
           )
         ) {
           return interaction.reply({
             content:
-              "❌ سبق وضغطت على العداد.",
+              "❌ ما عندك صلاحية.",
             ephemeral: true
           });
         }
 
-        counter.users.push(
-          interaction.user.id
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle("🔒 إغلاق التذكرة")
+              .setDescription(
+                "سيتم حذف التذكرة خلال **5 ثواني**."
+              )
+              .setColor("Red")
+          ]
+        });
+
+        await sendLog(
+          interaction.guild,
+          "tickets",
+          logEmbed(
+            "🔒 إغلاق تذكرة",
+            "Red"
+          ).addFields(
+            {
+              name: "👤 صاحب التذكرة",
+              value: `<@${owner}>`,
+              inline: true
+            },
+            {
+              name: "🔢 الرقم",
+              value: number,
+              inline: true
+            },
+            {
+              name: "📌 النوع",
+              value: type,
+              inline: true
+            },
+            {
+              name: "👮 أغلقها",
+              value: `${interaction.user}`,
+              inline: true
+            }
+          )
         );
 
-        counter.count++;
-
-        saveCounters(counters);
-
-        const button =
-          new ButtonBuilder()
-            .setCustomId(
-              `عداد_${counterId}`
-            )
-            .setLabel(
-              `${counter.count}`
-            )
-            .setEmoji("🔢")
-            .setStyle(
-              ButtonStyle.Primary
-            );
-
-        const row =
-          new ActionRowBuilder()
-            .addComponents(button);
-
-        await interaction.update({
-          components: [row]
-        });
+        setTimeout(() => {
+          interaction.channel.delete()
+            .catch(() => {});
+        }, 5000);
 
         return;
       }
@@ -2098,7 +1840,6 @@ client.on(
         interaction.customId ===
         "بدء_التقديم"
       ) {
-
         return startApplication(
           interaction
         );
@@ -2113,7 +1854,6 @@ client.on(
           "قبول_تقديم_"
         )
       ) {
-
         if (
           !isStaff(
             interaction.member
@@ -2124,26 +1864,24 @@ client.on(
         ) {
           return interaction.reply({
             content:
-              "❌ ما عندك صلاحية لقبول التقديمات.",
+              "❌ ما عندك صلاحية.",
             ephemeral: true
           });
         }
 
-        const applicationId =
+        const id =
           interaction.customId.replace(
             "قبول_تقديم_",
             ""
           );
 
-        const applications =
+        const data =
           getApplications();
 
         const record =
-          applications[
+          data[
             interaction.guild.id
-          ]?.records?.[
-            applicationId
-          ];
+          ]?.records?.[id];
 
         if (!record) {
           return interaction.reply({
@@ -2159,7 +1897,7 @@ client.on(
         ) {
           return interaction.reply({
             content:
-              `❌ هذا التقديم حالته بالفعل: **${record.status}**`,
+              "❌ تم اتخاذ قرار على هذا التقديم مسبقًا.",
             ephemeral: true
           });
         }
@@ -2182,40 +1920,38 @@ client.on(
             interaction.guild.id
           );
 
-        try {
+        let added = false;
+        let removed = false;
 
+        try {
           if (
-            config.removeRoleId &&
-            member.roles.cache.has(
-              config.removeRoleId
-            )
+            config.removeRoleId
           ) {
             await member.roles.remove(
               config.removeRoleId
-            );
+            ).catch(() => {});
+
+            removed = true;
           }
 
           if (
-            config.acceptRoleId &&
-            !member.roles.cache.has(
-              config.acceptRoleId
-            )
+            config.acceptRoleId
           ) {
             await member.roles.add(
               config.acceptRoleId
             );
+
+            added = true;
           }
-
         } catch (error) {
-
           console.error(
-            "❌ خطأ في رتب التقديم:",
+            "Role error:",
             error
           );
 
           return interaction.reply({
             content:
-              "❌ ما قدرت أعدل رتب العضو. تأكد أن رتبة البوت أعلى من الرتب المحددة.",
+              "❌ ما قدرت أعدل الرتب. تأكد أن رتبة البوت أعلى من الرتب.",
             ephemeral: true
           });
         }
@@ -2229,92 +1965,83 @@ client.on(
         record.reviewedAt =
           Date.now();
 
-        saveApplications(
-          applications
-        );
+        saveApplications(data);
 
-        const disabledRow =
-          new ActionRowBuilder()
-            .addComponents(
+        const disabled =
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                `accepted_${id}`
+              )
+              .setLabel("تم القبول")
+              .setEmoji("✅")
+              .setStyle(
+                ButtonStyle.Success
+              )
+              .setDisabled(true),
 
-              new ButtonBuilder()
-                .setCustomId(
-                  `تم_قبول_${applicationId}`
-                )
-                .setLabel(
-                  "تم القبول"
-                )
-                .setEmoji("✅")
-                .setStyle(
-                  ButtonStyle.Success
-                )
-                .setDisabled(true),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `تم_رفض_${applicationId}`
-                )
-                .setLabel(
-                  "رفض"
-                )
-                .setEmoji("❌")
-                .setStyle(
-                  ButtonStyle.Danger
-                )
-                .setDisabled(true)
-            );
+            new ButtonBuilder()
+              .setCustomId(
+                `rejected_${id}`
+              )
+              .setLabel("رفض")
+              .setEmoji("❌")
+              .setStyle(
+                ButtonStyle.Danger
+              )
+              .setDisabled(true)
+          );
 
         await interaction.message.edit({
-          components: [
-            disabledRow
-          ]
+          components: [disabled]
         }).catch(() => {});
 
         await member.send(
-          `🎉 **تم قبول تقديمك في ${interaction.guild.name}!**\n\n` +
-          `مبروك، تم قبولك في الإدارة.\n` +
-          `👮 تمت الموافقة بواسطة: ${interaction.user}`
+          `🎉 **تم قبول تقديمك في ${interaction.guild.name}!**`
         ).catch(() => {});
 
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "✅ قبول تقديم"
-            )
-            .setColor("Green")
-            .addFields(
-              {
-                name:
-                  "👤 المتقدم",
-                value:
-                  `<@${record.userId}>`,
-                inline: true
-              },
-              {
-                name:
-                  "🔢 رقم التقديم",
-                value:
-                  `#${applicationId}`,
-                inline: true
-              },
-              {
-                name:
-                  "👮 الموافق",
-                value:
-                  `${interaction.user}`,
-                inline: true
-              }
-            )
-            .setTimestamp();
-
-        await sendApplicationLog(
+        await sendLog(
           interaction.guild,
-          logEmbed
+          "applications",
+          logEmbed(
+            "✅ قبول تقديم",
+            "Green"
+          ).addFields(
+            {
+              name: "👤 المتقدم",
+              value: `<@${record.userId}>`,
+              inline: true
+            },
+            {
+              name: "🔢 رقم التقديم",
+              value: `#${id}`,
+              inline: true
+            },
+            {
+              name: "👮 الموافق",
+              value: `${interaction.user}`,
+              inline: true
+            },
+            {
+              name: "🟢 رتبة القبول",
+              value: added
+                ? "تمت الإضافة"
+                : "غير محددة",
+              inline: true
+            },
+            {
+              name: "🔴 رتبة الإزالة",
+              value: removed
+                ? "تمت الإزالة"
+                : "غير محددة",
+              inline: true
+            }
+          )
         );
 
         return interaction.reply({
           content:
-            `✅ تم قبول التقديم #${applicationId} وإعطاء الرتبة المطلوبة.`,
+            `✅ تم قبول التقديم #${id}.`,
           ephemeral: true
         });
       }
@@ -2328,7 +2055,6 @@ client.on(
           "رفض_تقديم_"
         )
       ) {
-
         if (
           !isStaff(
             interaction.member
@@ -2339,26 +2065,24 @@ client.on(
         ) {
           return interaction.reply({
             content:
-              "❌ ما عندك صلاحية لرفض التقديمات.",
+              "❌ ما عندك صلاحية.",
             ephemeral: true
           });
         }
 
-        const applicationId =
+        const id =
           interaction.customId.replace(
             "رفض_تقديم_",
             ""
           );
 
-        const applications =
+        const data =
           getApplications();
 
         const record =
-          applications[
+          data[
             interaction.guild.id
-          ]?.records?.[
-            applicationId
-          ];
+          ]?.records?.[id];
 
         if (!record) {
           return interaction.reply({
@@ -2374,7 +2098,7 @@ client.on(
         ) {
           return interaction.reply({
             content:
-              `❌ هذا التقديم حالته بالفعل: **${record.status}**`,
+              "❌ تم اتخاذ قرار مسبقًا.",
             ephemeral: true
           });
         }
@@ -2388,105 +2112,157 @@ client.on(
         record.reviewedAt =
           Date.now();
 
-        saveApplications(
-          applications
-        );
+        saveApplications(data);
 
-        const disabledRow =
-          new ActionRowBuilder()
-            .addComponents(
+        const disabled =
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                `accepted_${id}`
+              )
+              .setLabel("قبول")
+              .setEmoji("✅")
+              .setStyle(
+                ButtonStyle.Success
+              )
+              .setDisabled(true),
 
-              new ButtonBuilder()
-                .setCustomId(
-                  `تم_قبول_${applicationId}`
-                )
-                .setLabel(
-                  "قبول"
-                )
-                .setEmoji("✅")
-                .setStyle(
-                  ButtonStyle.Success
-                )
-                .setDisabled(true),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `تم_رفض_${applicationId}`
-                )
-                .setLabel(
-                  "تم الرفض"
-                )
-                .setEmoji("❌")
-                .setStyle(
-                  ButtonStyle.Danger
-                )
-                .setDisabled(true)
-            );
+            new ButtonBuilder()
+              .setCustomId(
+                `rejected_${id}`
+              )
+              .setLabel("تم الرفض")
+              .setEmoji("❌")
+              .setStyle(
+                ButtonStyle.Danger
+              )
+              .setDisabled(true)
+          );
 
         await interaction.message.edit({
-          components: [
-            disabledRow
-          ]
+          components: [disabled]
         }).catch(() => {});
 
         const user =
-          await client.users.fetch(
-            record.userId
-          ).catch(() => null);
+          await client.users
+            .fetch(record.userId)
+            .catch(() => null);
 
         if (user) {
           await user.send(
-            `❌ **تم رفض تقديمك في ${interaction.guild.name}.**\n\n` +
-            `يمكنك التقديم مرة أخرى في حال فتح التقديم من جديد.`
+            `❌ **تم رفض تقديمك في ${interaction.guild.name}.**`
           ).catch(() => {});
         }
 
-        const logEmbed =
-          new EmbedBuilder()
-            .setTitle(
-              "❌ رفض تقديم"
-            )
-            .setColor("Red")
-            .addFields(
-              {
-                name:
-                  "👤 المتقدم",
-                value:
-                  `<@${record.userId}>`,
-                inline: true
-              },
-              {
-                name:
-                  "🔢 رقم التقديم",
-                value:
-                  `#${applicationId}`,
-                inline: true
-              },
-              {
-                name:
-                  "👮 الرافض",
-                value:
-                  `${interaction.user}`,
-                inline: true
-              }
-            )
-            .setTimestamp();
-
-        await sendApplicationLog(
+        await sendLog(
           interaction.guild,
-          logEmbed
+          "applications",
+          logEmbed(
+            "❌ رفض تقديم",
+            "Red"
+          ).addFields(
+            {
+              name: "👤 المتقدم",
+              value: `<@${record.userId}>`,
+              inline: true
+            },
+            {
+              name: "🔢 رقم التقديم",
+              value: `#${id}`,
+              inline: true
+            },
+            {
+              name: "👮 الرافض",
+              value: `${interaction.user}`,
+              inline: true
+            }
+          )
         );
 
         return interaction.reply({
           content:
-            `❌ تم رفض التقديم #${applicationId}.`,
+            `❌ تم رفض التقديم #${id}.`,
           ephemeral: true
         });
+      }
+
+      // ==================================================
+      // العدادات
+      // ==================================================
+
+      if (
+        interaction.customId.startsWith(
+          "عداد_"
+        )
+      ) {
+        const id =
+          interaction.customId.replace(
+            "عداد_",
+            ""
+          );
+
+        const counters =
+          getCounters();
+
+        const counter =
+          counters[id];
+
+        if (!counter) {
+          return interaction.reply({
+            content:
+              "❌ العداد غير موجود.",
+            ephemeral: true
+          });
+        }
+
+        if (!counter.users) {
+          counter.users = [];
+        }
+
+        if (
+          counter.users.includes(
+            interaction.user.id
+          )
+        ) {
+          return interaction.reply({
+            content:
+              "❌ سبق وصوت.",
+            ephemeral: true
+          });
+        }
+
+        counter.users.push(
+          interaction.user.id
+        );
+
+        counter.count++;
+
+        saveCounters(counters);
+
+        await interaction.update({
+          components: [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `عداد_${id}`
+                )
+                .setLabel(
+                  `${counter.count}`
+                )
+                .setEmoji("🔢")
+                .setStyle(
+                  ButtonStyle.Primary
+                )
+            )
+          ]
+        });
+
+        return;
       }
     }
 
     // ==================================================
-    // أوامر السلاش
+    // السلاش
     // ==================================================
 
     if (
@@ -2503,7 +2279,6 @@ client.on(
       interaction.commandName ===
       "اعطاء-رتبة"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2517,66 +2292,73 @@ client.on(
       }
 
       const member =
-        await interaction.guild.members
-          .fetch(
-            interaction.options.getUser(
-              "العضو"
-            ).id
-          );
+        await interaction.guild.members.fetch(
+          interaction.options.getUser(
+            "العضو"
+          ).id
+        );
 
       const roles = [];
 
-      const mainRole =
+      const main =
         interaction.options.getRole(
           "الرتبة-الأساسية"
         );
 
-      if (mainRole) {
-        roles.push(mainRole);
-      }
+      if (main) roles.push(main);
 
-      for (
-        let i = 1;
-        i <= 19;
-        i++
-      ) {
-
+      for (let i = 1; i <= 19; i++) {
         const role =
           interaction.options.getRole(
             `رتبة-جانبية-${i}`
           );
 
-        if (role) {
-          roles.push(role);
-        }
+        if (role) roles.push(role);
       }
 
-      let added = 0;
+      let count = 0;
 
-      for (
-        const role of roles
-      ) {
-
+      for (const role of roles) {
         if (
           role.position >=
-          interaction.guild.members.me
-            .roles.highest.position
+          interaction.guild.members.me.roles.highest.position
         ) {
           continue;
         }
 
-        try {
-          await member.roles.add(
-            role
-          );
-
-          added++;
-        } catch {}
+        await member.roles.add(role)
+          .then(() => count++)
+          .catch(() => {});
       }
+
+      await sendLog(
+        interaction.guild,
+        "roles",
+        logEmbed(
+          "🟢 إعطاء رتبة",
+          "Green"
+        ).addFields(
+          {
+            name: "👤 العضو",
+            value: `${member}`,
+            inline: true
+          },
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "🔢 عدد الرتب",
+            value: `${count}`,
+            inline: true
+          }
+        )
+      );
 
       return interaction.reply({
         content:
-          `✅ تم إعطاء **${added}** رتبة لـ ${member}.`,
+          `✅ تم إعطاء ${count} رتبة.`,
         ephemeral: true
       });
     }
@@ -2589,7 +2371,6 @@ client.on(
       interaction.commandName ===
       "ازالة-رتبة"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2603,50 +2384,36 @@ client.on(
       }
 
       const member =
-        await interaction.guild.members
-          .fetch(
-            interaction.options.getUser(
-              "العضو"
-            ).id
-          );
+        await interaction.guild.members.fetch(
+          interaction.options.getUser(
+            "العضو"
+          ).id
+        );
 
       const roles = [];
 
-      const mainRole =
+      const main =
         interaction.options.getRole(
           "الرتبة-الأساسية"
         );
 
-      if (mainRole) {
-        roles.push(mainRole);
-      }
+      if (main) roles.push(main);
 
-      for (
-        let i = 1;
-        i <= 19;
-        i++
-      ) {
-
+      for (let i = 1; i <= 19; i++) {
         const role =
           interaction.options.getRole(
             `رتبة-جانبية-${i}`
           );
 
-        if (role) {
-          roles.push(role);
-        }
+        if (role) roles.push(role);
       }
 
-      let removed = 0;
+      let count = 0;
 
-      for (
-        const role of roles
-      ) {
-
+      for (const role of roles) {
         if (
           role.position >=
-          interaction.guild.members.me
-            .roles.highest.position
+          interaction.guild.members.me.roles.highest.position
         ) {
           continue;
         }
@@ -2659,20 +2426,39 @@ client.on(
           continue;
         }
 
-        try {
-
-          await member.roles.remove(
-            role
-          );
-
-          removed++;
-
-        } catch {}
+        await member.roles.remove(role)
+          .then(() => count++)
+          .catch(() => {});
       }
+
+      await sendLog(
+        interaction.guild,
+        "roles",
+        logEmbed(
+          "🔴 إزالة رتبة",
+          "Red"
+        ).addFields(
+          {
+            name: "👤 العضو",
+            value: `${member}`,
+            inline: true
+          },
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "🔢 عدد الرتب",
+            value: `${count}`,
+            inline: true
+          }
+        )
+      );
 
       return interaction.reply({
         content:
-          `✅ تم إزالة **${removed}** رتبة من ${member}.`,
+          `✅ تم إزالة ${count} رتبة.`,
         ephemeral: true
       });
     }
@@ -2685,7 +2471,6 @@ client.on(
       interaction.commandName ===
       "تحذير"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2741,42 +2526,63 @@ client.on(
           interaction.guild.id
         ][user.id];
 
-      saveWarnings(
-        warnings
-      );
-
-      const dmEmbed =
-        new EmbedBuilder()
-          .setTitle(
-            "⚠️ تم تحذيرك"
-          )
-          .setDescription(
-            `تم تحذيرك في سيرفر **${interaction.guild.name}**`
-          )
-          .addFields(
-            {
-              name:
-                "📌 السبب",
-              value:
-                reason
-            },
-            {
-              name:
-                "🔢 عدد تحذيراتك",
-              value:
-                `${count}`
-            }
-          )
-          .setColor("Red")
-          .setTimestamp();
+      saveWarnings(warnings);
 
       await user.send({
-        embeds: [dmEmbed]
+        embeds: [
+          logEmbed(
+            "⚠️ تم تحذيرك",
+            "Red"
+          )
+            .setDescription(
+              `تم تحذيرك في **${interaction.guild.name}**`
+            )
+            .addFields(
+              {
+                name: "📌 السبب",
+                value: reason
+              },
+              {
+                name: "🔢 عدد التحذيرات",
+                value: `${count}`
+              }
+            )
+        ]
       }).catch(() => {});
+
+      await sendLog(
+        interaction.guild,
+        "moderation",
+        logEmbed(
+          "⚠️ تحذير عضو",
+          "Red"
+        ).addFields(
+          {
+            name: "👤 العضو",
+            value: `${user}`,
+            inline: true
+          },
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "📌 السبب",
+            value: reason,
+            inline: false
+          },
+          {
+            name: "🔢 التحذيرات",
+            value: `${count}`,
+            inline: true
+          }
+        )
+      );
 
       return interaction.reply({
         content:
-          `✅ تم تحذير ${user}\n**السبب:** ${reason}\n**عدد التحذيرات:** ${count}`,
+          `✅ تم تحذير ${user}.`,
         ephemeral: true
       });
     }
@@ -2789,7 +2595,6 @@ client.on(
       interaction.commandName ===
       "مسج-الرتبة"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2807,35 +2612,50 @@ client.on(
           "الرتبة"
         );
 
-      const message =
+      const text =
         interaction.options.getString(
           "الرسالة"
         );
 
       let sent = 0;
-      let failed = 0;
 
       for (
         const member of
         role.members.values()
       ) {
-
-        try {
-
-          await member.send(
-            message
-          );
-
-          sent++;
-
-        } catch {
-          failed++;
-        }
+        await member.send(text)
+          .then(() => sent++)
+          .catch(() => {});
       }
+
+      await sendLog(
+        interaction.guild,
+        "messages",
+        logEmbed(
+          "📨 رسالة خاصة لرتبة",
+          "Blue"
+        ).addFields(
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "🏷️ الرتبة",
+            value: `${role}`,
+            inline: true
+          },
+          {
+            name: "📨 تم الإرسال",
+            value: `${sent}`,
+            inline: true
+          }
+        )
+      );
 
       return interaction.reply({
         content:
-          `✅ تم إرسال الرسالة.\n\n📨 تم الإرسال: **${sent}**\n❌ فشل: **${failed}**`,
+          `✅ تم الإرسال إلى ${sent} عضو.`,
         ephemeral: true
       });
     }
@@ -2848,7 +2668,6 @@ client.on(
       interaction.commandName ===
       "ارسال-ايمبد"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2890,6 +2709,26 @@ client.on(
         embeds: [embed]
       });
 
+      await sendLog(
+        interaction.guild,
+        "commands",
+        logEmbed(
+          "📤 إرسال ايمبد",
+          "Blue"
+        ).addFields(
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "📁 الروم",
+            value: `${channel}`,
+            inline: true
+          }
+        )
+      );
+
       return interaction.reply({
         content:
           "✅ تم إرسال الايمبد.",
@@ -2905,7 +2744,6 @@ client.on(
       interaction.commandName ===
       "ارسال-اعلان"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2923,20 +2761,19 @@ client.on(
           "الروم"
         );
 
-      const message =
+      const text =
         interaction.options.getString(
           "الرسالة"
         );
 
-      const embed =
-        new EmbedBuilder()
-          .setTitle("📢 إعلان")
-          .setDescription(message)
-          .setColor("Gold")
-          .setTimestamp();
-
       await channel.send({
-        embeds: [embed]
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📢 إعلان")
+            .setDescription(text)
+            .setColor("Gold")
+            .setTimestamp()
+        ]
       });
 
       return interaction.reply({
@@ -2947,14 +2784,13 @@ client.on(
     }
 
     // ==================================================
-    // زر عداد
+    // العداد
     // ==================================================
 
     if (
       interaction.commandName ===
       "زر-عداد"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -2972,52 +2808,43 @@ client.on(
           "الروم"
         );
 
-      const message =
+      const text =
         interaction.options.getString(
           "الرسالة"
         );
 
-      const counterId =
+      const id =
         `${interaction.guild.id}_${Date.now()}`;
 
       const counters =
         getCounters();
 
-      counters[counterId] = {
+      counters[id] = {
         count: 0,
         users: []
       };
 
-      saveCounters(
-        counters
-      );
-
-      const embed =
-        new EmbedBuilder()
-          .setDescription(message)
-          .setColor("Blue")
-          .setTimestamp();
-
-      const button =
-        new ButtonBuilder()
-          .setCustomId(
-            `عداد_${counterId}`
-          )
-          .setLabel("0")
-          .setEmoji("🔢")
-          .setStyle(
-            ButtonStyle.Primary
-          );
-
-      const row =
-        new ActionRowBuilder()
-          .addComponents(
-            button
-          );
+      saveCounters(counters);
 
       await channel.send({
-        embeds: [embed],
-        components: [row]
+        embeds: [
+          new EmbedBuilder()
+            .setDescription(text)
+            .setColor("Blue")
+        ],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                `عداد_${id}`
+              )
+              .setLabel("0")
+              .setEmoji("🔢")
+              .setStyle(
+                ButtonStyle.Primary
+              )
+          )
+        ]
       });
 
       return interaction.reply({
@@ -3028,14 +2855,13 @@ client.on(
     }
 
     // ==================================================
-    // حذف رسائل
+    // حذف الرسائل
     // ==================================================
 
     if (
       interaction.commandName ===
       "حذف-رسائل"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3048,71 +2874,77 @@ client.on(
         });
       }
 
-      let remaining =
+      let amount =
         interaction.options.getInteger(
           "العدد"
         );
-
-      let deletedTotal = 0;
 
       await interaction.deferReply({
         ephemeral: true
       });
 
-      while (
-        remaining > 0
-      ) {
+      let deleted = 0;
 
+      while (amount > 0) {
         const batch =
-          Math.min(
-            remaining,
-            100
-          );
+          Math.min(amount, 100);
 
-        const deleted =
-          await interaction.channel
-            .bulkDelete(
-              batch,
-              true
-            )
-            .catch(
-              () => null
-            );
+        const messages =
+          await interaction.channel.bulkDelete(
+            batch,
+            true
+          ).catch(() => null);
 
-        if (!deleted) {
-          break;
-        }
+        if (!messages) break;
 
-        const count =
-          deleted.size;
-
-        deletedTotal +=
-          count;
-
-        remaining -=
-          count;
+        deleted += messages.size;
+        amount -= messages.size;
 
         if (
-          count < batch
+          messages.size < batch
         ) {
           break;
         }
       }
 
+      await sendLog(
+        interaction.guild,
+        "messages",
+        logEmbed(
+          "🗑️ حذف رسائل",
+          "Red"
+        ).addFields(
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "📁 الروم",
+            value: `${interaction.channel}`,
+            inline: true
+          },
+          {
+            name: "🗑️ العدد",
+            value: `${deleted}`,
+            inline: true
+          }
+        )
+      );
+
       return interaction.editReply(
-        `✅ تم حذف **${deletedTotal}** رسالة.`
+        `✅ تم حذف **${deleted}** رسالة.`
       );
     }
 
     // ==================================================
-    // إضافة رد
+    // الردود
     // ==================================================
 
     if (
       interaction.commandName ===
       "اضافة-رد"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3126,43 +2958,33 @@ client.on(
       }
 
       const word =
-        interaction.options
-          .getString(
-            "الكلمة"
-          )
-          .toLowerCase();
+        interaction.options.getString(
+          "الكلمة"
+        ).toLowerCase();
 
       const reply =
         interaction.options.getString(
           "الرد"
         );
 
-      const replies =
+      const data =
         getAutoReplies();
 
-      replies[word] =
-        reply;
+      data[word] = reply;
 
-      saveAutoReplies(
-        replies
-      );
+      saveAutoReplies(data);
 
       return interaction.reply({
         content:
-          `✅ تم إضافة الرد للكلمة: **${word}**`,
+          `✅ تم إضافة الرد للكلمة **${word}**`,
         ephemeral: true
       });
     }
-
-    // ==================================================
-    // تعديل رد
-    // ==================================================
 
     if (
       interaction.commandName ===
       "تعديل-رد"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3176,34 +2998,29 @@ client.on(
       }
 
       const word =
-        interaction.options
-          .getString(
-            "الكلمة"
-          )
-          .toLowerCase();
+        interaction.options.getString(
+          "الكلمة"
+        ).toLowerCase();
 
       const reply =
         interaction.options.getString(
           "الرد"
         );
 
-      const replies =
+      const data =
         getAutoReplies();
 
-      if (!replies[word]) {
+      if (!data[word]) {
         return interaction.reply({
           content:
-            "❌ هذه الكلمة غير موجودة.",
+            "❌ الكلمة غير موجودة.",
           ephemeral: true
         });
       }
 
-      replies[word] =
-        reply;
+      data[word] = reply;
 
-      saveAutoReplies(
-        replies
-      );
+      saveAutoReplies(data);
 
       return interaction.reply({
         content:
@@ -3212,15 +3029,10 @@ client.on(
       });
     }
 
-    // ==================================================
-    // حذف رد
-    // ==================================================
-
     if (
       interaction.commandName ===
       "حذف-رد"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3234,28 +3046,24 @@ client.on(
       }
 
       const word =
-        interaction.options
-          .getString(
-            "الكلمة"
-          )
-          .toLowerCase();
+        interaction.options.getString(
+          "الكلمة"
+        ).toLowerCase();
 
-      const replies =
+      const data =
         getAutoReplies();
 
-      if (!replies[word]) {
+      if (!data[word]) {
         return interaction.reply({
           content:
-            "❌ هذه الكلمة غير موجودة.",
+            "❌ الكلمة غير موجودة.",
           ephemeral: true
         });
       }
 
-      delete replies[word];
+      delete data[word];
 
-      saveAutoReplies(
-        replies
-      );
+      saveAutoReplies(data);
 
       return interaction.reply({
         content:
@@ -3264,15 +3072,10 @@ client.on(
       });
     }
 
-    // ==================================================
-    // قائمة الردود
-    // ==================================================
-
     if (
       interaction.commandName ===
       "قائمة-الردود"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3285,58 +3088,47 @@ client.on(
         });
       }
 
-      const replies =
+      const data =
         getAutoReplies();
 
       const keys =
-        Object.keys(
-          replies
-        );
+        Object.keys(data);
 
-      if (
-        keys.length === 0
-      ) {
+      if (!keys.length) {
         return interaction.reply({
           content:
-            "❌ ما فيه ردود مضافة.",
+            "❌ ما فيه ردود.",
           ephemeral: true
         });
       }
 
       const text =
-        keys
-          .map(
-            (key, index) =>
-              `**${index + 1}.** ${key} → ${replies[key]}`
-          )
-          .join("\n");
-
-      const embed =
-        new EmbedBuilder()
-          .setTitle(
-            "📋 الردود التلقائية"
-          )
-          .setDescription(
-            text
-          )
-          .setColor("Blue")
-          .setTimestamp();
+        keys.map(
+          (key, i) =>
+            `**${i + 1}.** ${key} → ${data[key]}`
+        ).join("\n");
 
       return interaction.reply({
-        embeds: [embed],
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📋 الردود")
+            .setDescription(
+              truncate(text, 4000)
+            )
+            .setColor("Blue")
+        ],
         ephemeral: true
       });
     }
 
     // ==================================================
-    // مستواي
+    // المستويات
     // ==================================================
 
     if (
       interaction.commandName ===
       "مستواي"
     ) {
-
       const user =
         interaction.options.getUser(
           "العضو"
@@ -3346,133 +3138,78 @@ client.on(
       const levels =
         getLevels();
 
-      const guildData =
+      const data =
         levels[
           interaction.guild.id
-        ] || {};
-
-      const data =
-        guildData[user.id] || {
-          xp: 0,
-          level: 1
+        ]?.[user.id] || {
+          level: 1,
+          xp: 0
         };
 
-      const needed =
-        xpNeededForLevel(
-          data.level
-        );
-
-      const embed =
-        new EmbedBuilder()
-          .setTitle(
-            "📊 مستوى العضو"
-          )
-          .setDescription(
-            `${user}\n\n🏆 المستوى: **${data.level}**\n⭐ الخبرة: **${data.xp} / ${needed}**`
-          )
-          .setThumbnail(
-            user.displayAvatarURL({
-              dynamic: true
-            })
-          )
-          .setColor("Gold")
-          .setTimestamp();
-
       return interaction.reply({
-        embeds: [embed]
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("📊 مستوى العضو")
+            .setDescription(
+              `${user}\n\n🏆 المستوى: **${data.level}**\n⭐ XP: **${data.xp}**`
+            )
+            .setThumbnail(
+              user.displayAvatarURL({
+                dynamic: true
+              })
+            )
+            .setColor("Gold")
+        ]
       });
     }
-
-    // ==================================================
-    // المتصدرين
-    // ==================================================
 
     if (
       interaction.commandName ===
       "المتصدرين"
     ) {
-
       const levels =
         getLevels();
 
-      const guildData =
+      const data =
         levels[
           interaction.guild.id
         ] || {};
 
       const sorted =
-        Object.entries(
-          guildData
-        )
+        Object.entries(data)
           .sort(
-            (a, b) => {
-
-              if (
-                b[1].level !==
-                a[1].level
-              ) {
-                return (
-                  b[1].level -
-                  a[1].level
-                );
-              }
-
-              return (
-                b[1].xp -
-                a[1].xp
-              );
-            }
+            (a, b) =>
+              (b[1].level * 100 + b[1].xp) -
+              (a[1].level * 100 + a[1].xp)
           )
-          .slice(
-            0,
-            10
-          );
+          .slice(0, 10);
 
-      if (
-        sorted.length === 0
-      ) {
-        return interaction.reply({
-          content:
-            "❌ ما فيه بيانات مستويات حتى الآن."
-        });
+      if (!sorted.length) {
+        return interaction.reply(
+          "❌ لا توجد بيانات."
+        );
       }
 
-      let description =
-        "";
-
-      sorted.forEach(
-        ([userId, data], index) => {
-
-          description +=
-            `**${index + 1}.** <@${userId}> — المستوى **${data.level}** | XP **${data.xp}**\n`;
-        }
-      );
-
-      const embed =
-        new EmbedBuilder()
-          .setTitle(
-            "🏆 المتصدرين"
-          )
-          .setDescription(
-            description
-          )
-          .setColor("Gold")
-          .setTimestamp();
+      const text =
+        sorted.map(
+          ([id, value], i) =>
+            `**${i + 1}.** <@${id}> — مستوى **${value.level}** | XP **${value.xp}**`
+        ).join("\n");
 
       return interaction.reply({
-        embeds: [embed]
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🏆 المتصدرين")
+            .setDescription(text)
+            .setColor("Gold")
+        ]
       });
     }
-
-    // ==================================================
-    // تعديل مستوى
-    // ==================================================
 
     if (
       interaction.commandName ===
       "تعديل-مستوى"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3498,103 +3235,33 @@ client.on(
       const xp =
         interaction.options.getInteger(
           "xp"
-        );
+        ) || 0;
 
-      const levels =
+      const data =
         getLevels();
 
       if (
-        !levels[
+        !data[
           interaction.guild.id
         ]
       ) {
-        levels[
+        data[
           interaction.guild.id
         ] = {};
       }
 
-      levels[
+      data[
         interaction.guild.id
       ][user.id] = {
         level,
-        xp: xp ?? 0
+        xp
       };
 
-      saveLevels(
-        levels
-      );
+      saveLevels(data);
 
       return interaction.reply({
         content:
-          `✅ تم تعديل مستوى ${user} إلى **${level}**.`,
-        ephemeral: true
-      });
-    }
-
-    // ==================================================
-    // لوحة التذاكر
-    // ==================================================
-
-    if (
-      interaction.commandName ===
-      "لوحة-تذاكر"
-    ) {
-
-      if (
-        !isStaff(
-          interaction.member
-        )
-      ) {
-        return interaction.reply({
-          content:
-            "❌ ما عندك صلاحية.",
-          ephemeral: true
-        });
-      }
-
-      const channel =
-        interaction.options.getChannel(
-          "الروم"
-        );
-
-      const embed =
-        new EmbedBuilder()
-          .setTitle(
-            "🎫 نظام التذاكر"
-          )
-          .setDescription(
-            "مرحباً بك في نظام التذاكر.\n\nاضغط على الزر بالأسفل لفتح تذكرة والتواصل مع الإدارة."
-          )
-          .setColor("Blue")
-          .setTimestamp();
-
-      const button =
-        new ButtonBuilder()
-          .setCustomId(
-            "فتح_تذكرة"
-          )
-          .setLabel(
-            "فتح تذكرة"
-          )
-          .setEmoji("🎫")
-          .setStyle(
-            ButtonStyle.Primary
-          );
-
-      const row =
-        new ActionRowBuilder()
-          .addComponents(
-            button
-          );
-
-      await channel.send({
-        embeds: [embed],
-        components: [row]
-      });
-
-      return interaction.reply({
-        content:
-          "✅ تم إرسال لوحة التذاكر.",
+          `✅ تم تعديل مستوى ${user}.`,
         ephemeral: true
       });
     }
@@ -3607,7 +3274,6 @@ client.on(
       interaction.commandName ===
       "تحديد-روم-الفل"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3625,21 +3291,74 @@ client.on(
           "الروم"
         );
 
-      const channels =
+      const data =
         getLevelUpChannels();
 
-      channels[
+      data[
         interaction.guild.id
-      ] =
-        channel.id;
+      ] = channel.id;
 
-      saveLevelUpChannels(
-        channels
-      );
+      saveLevelUpChannels(data);
 
       return interaction.reply({
         content:
-          `✅ تم تحديد ${channel} كروم لترقيات المستوى.`,
+          `✅ تم تحديد ${channel}.`,
+        ephemeral: true
+      });
+    }
+
+    // ==================================================
+    // لوحة التذاكر
+    // ==================================================
+
+    if (
+      interaction.commandName ===
+      "لوحة-تذاكر"
+    ) {
+      if (
+        !isStaff(
+          interaction.member
+        )
+      ) {
+        return interaction.reply({
+          content:
+            "❌ ما عندك صلاحية.",
+          ephemeral: true
+        });
+      }
+
+      const channel =
+        interaction.options.getChannel(
+          "الروم"
+        );
+
+      await channel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle("🎫 نظام التذاكر")
+            .setDescription(
+              "اضغط على الزر بالأسفل لفتح تذكرة."
+            )
+            .setColor("Blue")
+        ],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(
+                "فتح_تذكرة"
+              )
+              .setLabel("فتح تذكرة")
+              .setEmoji("🎫")
+              .setStyle(
+                ButtonStyle.Primary
+              )
+          )
+        ]
+      });
+
+      return interaction.reply({
+        content:
+          "✅ تم إرسال لوحة التذاكر.",
         ephemeral: true
       });
     }
@@ -3652,13 +3371,12 @@ client.on(
       interaction.commandName ===
       "تسطيب-تقديم"
     ) {
-
       if (
-        !interaction.member.permissions.has(
-          PermissionFlagsBits.ManageGuild
-        ) &&
         !isStaff(
           interaction.member
+        ) &&
+        !interaction.member.permissions.has(
+          PermissionFlagsBits.ManageGuild
         )
       ) {
         return interaction.reply({
@@ -3693,35 +3411,39 @@ client.on(
           "لون-الإيمبد"
         );
 
-      const config = {
-        channelId:
-          applicationChannel.id,
+      const config =
+        getApplicationConfig(
+          interaction.guild.id
+        ) || {};
 
-        reviewChannelId:
-          reviewChannel.id,
+      config.channelId =
+        applicationChannel.id;
 
-        acceptRoleId:
-          acceptRole.id,
+      config.reviewChannelId =
+        reviewChannel.id;
 
-        removeRoleId:
-          removeRole.id,
+      config.acceptRoleId =
+        acceptRole?.id || null;
 
-        color:
-          validColor(color)
-      };
+      config.removeRoleId =
+        removeRole?.id || null;
 
-      for (
-        let i = 1;
-        i <= 20;
-        i++
-      ) {
+      if (color) {
+        config.color =
+          validColor(color);
+      }
 
-        config[
-          `question${i}`
-        ] =
+      for (let i = 1; i <= 20; i++) {
+        const question =
           interaction.options.getString(
             `سؤال-${i}`
           );
+
+        if (question !== null) {
+          config[
+            `question${i}`
+          ] = question;
+        }
       }
 
       saveApplicationConfig(
@@ -3729,19 +3451,182 @@ client.on(
         config
       );
 
+      // ينشئ كل اللوقات تلقائيًا
+      await getOrCreateLogSystem(
+        interaction.guild
+      );
+
+      // إرسال اللوحة
       await applicationChannel.send(
-        applicationPanel(config)
+        buildApplicationPanel(config)
+      );
+
+      await sendLog(
+        interaction.guild,
+        "admin",
+        logEmbed(
+          "⚙️ تسطيب نظام التقديم",
+          "Blue"
+        ).addFields(
+          {
+            name: "👮 بواسطة",
+            value: `${interaction.user}`,
+            inline: true
+          },
+          {
+            name: "📋 روم التقديم",
+            value: `${applicationChannel}`,
+            inline: true
+          },
+          {
+            name: "📥 روم المراجعة",
+            value: `${reviewChannel}`,
+            inline: true
+          },
+          {
+            name: "🟢 رتبة القبول",
+            value:
+              acceptRole
+                ? `${acceptRole}`
+                : "غير محددة",
+            inline: true
+          },
+          {
+            name: "🔴 رتبة الإزالة",
+            value:
+              removeRole
+                ? `${removeRole}`
+                : "غير محددة",
+            inline: true
+          }
+        )
       );
 
       return interaction.reply({
         content:
-          "✅ تم تسطيب نظام التقديم بنجاح.\n\n" +
-          `📍 مكان التقديم: ${applicationChannel}\n` +
-          `📥 مكان المراجعة: ${reviewChannel}\n` +
-          `✅ رتبة القبول: ${acceptRole}\n` +
-          `❌ رتبة الإزالة: ${removeRole}\n` +
-          `🎨 اللون: \`${config.color}\`\n` +
-          `📝 عدد الأسئلة: **20**`,
+          "✅ تم تسطيب نظام التقديم.\n\n" +
+          `📋 التقديم: ${applicationChannel}\n` +
+          `📥 المراجعة: ${reviewChannel}\n` +
+          `🟢 القبول: ${acceptRole || "غير محدد"}\n` +
+          `🔴 الإزالة: ${removeRole || "غير محددة"}\n\n` +
+          "📝 الأسئلة التي لم تضعها تم تجاهلها.\n" +
+          "📚 تم تجهيز نظام اللوقات تلقائيًا.",
+        ephemeral: true
+      });
+    }
+
+    // ==================================================
+    // تعديل التقديم
+    // ==================================================
+
+    if (
+      interaction.commandName ===
+      "تعديل-تقديم"
+    ) {
+      if (
+        !isStaff(
+          interaction.member
+        ) &&
+        !interaction.member.permissions.has(
+          PermissionFlagsBits.ManageGuild
+        )
+      ) {
+        return interaction.reply({
+          content:
+            "❌ تحتاج صلاحية إدارة السيرفر.",
+          ephemeral: true
+        });
+      }
+
+      const config =
+        getApplicationConfig(
+          interaction.guild.id
+        );
+
+      if (!config) {
+        return interaction.reply({
+          content:
+            "❌ سطّب نظام التقديم أولًا باستخدام `/تسطيب-تقديم`.",
+          ephemeral: true
+        });
+      }
+
+      const title =
+        interaction.options.getString(
+          "العنوان"
+        );
+
+      const description =
+        interaction.options.getString(
+          "الوصف"
+        );
+
+      const color =
+        interaction.options.getString(
+          "اللون"
+        );
+
+      const buttonLabel =
+        interaction.options.getString(
+          "نص-الزر"
+        );
+
+      if (title !== null) {
+        config.title = title;
+      }
+
+      if (description !== null) {
+        config.description =
+          description;
+      }
+
+      if (color !== null) {
+        config.color =
+          validColor(color);
+      }
+
+      if (buttonLabel !== null) {
+        config.buttonLabel =
+          buttonLabel;
+      }
+
+      saveApplicationConfig(
+        interaction.guild.id,
+        config
+      );
+
+      const channel =
+        interaction.guild.channels.cache.get(
+          config.channelId
+        );
+
+      if (!channel) {
+        return interaction.reply({
+          content:
+            "❌ روم التقديم غير موجود.",
+          ephemeral: true
+        });
+      }
+
+      await channel.send(
+        buildApplicationPanel(config)
+      );
+
+      await sendLog(
+        interaction.guild,
+        "admin",
+        logEmbed(
+          "✏️ تعديل لوحة التقديم",
+          "Blue"
+        ).addFields({
+          name: "👮 بواسطة",
+          value: `${interaction.user}`
+        })
+      );
+
+      return interaction.reply({
+        content:
+          "✅ تم تعديل رسالة التقديم وإرسال اللوحة الجديدة.",
         ephemeral: true
       });
     }
@@ -3754,7 +3639,6 @@ client.on(
       interaction.commandName ===
       "لوحة-تقديم"
     ) {
-
       if (
         !isStaff(
           interaction.member
@@ -3775,7 +3659,7 @@ client.on(
       if (!config) {
         return interaction.reply({
           content:
-            "❌ نظام التقديم غير مسطب.\nاستخدم `/تسطيب-تقديم` أولاً.",
+            "❌ نظام التقديم غير مسطب.",
           ephemeral: true
         });
       }
@@ -3788,13 +3672,13 @@ client.on(
       if (!channel) {
         return interaction.reply({
           content:
-            "❌ روم التقديم المحفوظ غير موجود.",
+            "❌ روم التقديم غير موجود.",
           ephemeral: true
         });
       }
 
       await channel.send(
-        applicationPanel(config)
+        buildApplicationPanel(config)
       );
 
       return interaction.reply({
@@ -3807,13 +3691,14 @@ client.on(
 );
 
 // ==================================================
-// الرسائل
+// XP + الردود
 // ==================================================
+
+const xpCooldown = new Map();
 
 client.on(
   "messageCreate",
   async message => {
-
     if (
       message.author.bot ||
       !message.guild
@@ -3821,10 +3706,7 @@ client.on(
       return;
     }
 
-    // ==================================================
-    // الردود التلقائية
-    // ==================================================
-
+    // الردود
     const replies =
       getAutoReplies();
 
@@ -3835,36 +3717,27 @@ client.on(
       const word of
       Object.keys(replies)
     ) {
-
       if (
         content.includes(
           word.toLowerCase()
         )
       ) {
-
         await message.reply({
-          content:
-            replies[word]
+          content: replies[word]
         }).catch(() => {});
-
         break;
       }
     }
 
-    // ==================================================
     // XP
-    // ==================================================
-
-    const cooldownKey =
+    const key =
       `${message.guild.id}_${message.author.id}`;
 
     const now =
       Date.now();
 
     const last =
-      xpCooldown.get(
-        cooldownKey
-      ) || 0;
+      xpCooldown.get(key) || 0;
 
     if (
       now - last <
@@ -3874,7 +3747,7 @@ client.on(
     }
 
     xpCooldown.set(
-      cooldownKey,
+      key,
       now
     );
 
@@ -3896,103 +3769,488 @@ client.on(
         message.guild.id
       ][message.author.id]
     ) {
-
       levels[
         message.guild.id
       ][message.author.id] = {
-        xp: 0,
-        level: 1
+        level: 1,
+        xp: 0
       };
     }
 
-    const userData =
+    const data =
       levels[
         message.guild.id
       ][message.author.id];
 
     const oldLevel =
-      userData.level;
+      data.level;
 
-    const randomXP =
+    data.xp +=
       Math.floor(
         Math.random() * 11
       ) + 15;
 
-    userData.xp +=
-      randomXP;
-
     while (
-      userData.xp >=
-      xpNeededForLevel(
-        userData.level
-      )
+      data.xp >=
+      data.level * 100
     ) {
+      data.xp -=
+        data.level * 100;
 
-      userData.xp -=
-        xpNeededForLevel(
-          userData.level
-        );
-
-      userData.level++;
+      data.level++;
     }
 
-    saveLevels(
-      levels
-    );
-
-    // ==================================================
-    // ترقية مستوى
-    // ==================================================
+    saveLevels(levels);
 
     if (
-      userData.level >
+      data.level >
       oldLevel
     ) {
-
-      const levelUpChannels =
+      const channels =
         getLevelUpChannels();
 
-      const channelId =
-        levelUpChannels[
-          message.guild.id
-        ];
+      const channel =
+        message.guild.channels.cache.get(
+          channels[
+            message.guild.id
+          ]
+        );
 
-      if (channelId) {
-
-        const channel =
-          message.guild.channels.cache.get(
-            channelId
-          );
-
-        if (channel) {
-
-          const embed =
+      if (channel) {
+        await channel.send({
+          embeds: [
             new EmbedBuilder()
               .setTitle(
                 "🎉 ترقية مستوى"
               )
               .setDescription(
-                `مبروك ${message.author}!\n\n🏆 وصلت إلى المستوى **${userData.level}**`
+                `مبروك ${message.author}!\n\n🏆 وصلت إلى المستوى **${data.level}**`
               )
-              .setColor("Gold")
               .setThumbnail(
                 message.author.displayAvatarURL({
                   dynamic: true
                 })
               )
-              .setTimestamp();
-
-          await channel.send({
-            embeds: [embed]
-          }).catch(() => {});
-        }
+              .setColor("Gold")
+          ]
+        }).catch(() => {});
       }
     }
   }
 );
 
 // ==================================================
-// تسجيل الدخول
+// لوقات الأعضاء
+// ==================================================
+
+client.on(
+  "guildMemberAdd",
+  async member => {
+    await sendLog(
+      member.guild,
+      "members",
+      logEmbed(
+        "📥 دخول عضو",
+        "Green"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value: `${member}`,
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value: member.id,
+          inline: true
+        },
+        {
+          name: "👥 الأعضاء",
+          value: `${member.guild.memberCount}`,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+client.on(
+  "guildMemberRemove",
+  async member => {
+    await sendLog(
+      member.guild,
+      "members",
+      logEmbed(
+        "📤 خروج عضو",
+        "Red"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value:
+            `${member.user?.tag || member.id}`,
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value: member.id,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+// ==================================================
+// لوقات الرتب
+// ==================================================
+
+client.on(
+  "guildMemberUpdate",
+  async (oldMember, newMember) => {
+    const oldRoles =
+      oldMember.roles.cache;
+
+    const newRoles =
+      newMember.roles.cache;
+
+    const added =
+      newRoles.filter(
+        role =>
+          !oldRoles.has(role.id)
+      );
+
+    const removed =
+      oldRoles.filter(
+        role =>
+          !newRoles.has(role.id)
+      );
+
+    if (
+      added.size ||
+      removed.size
+    ) {
+      const embed =
+        logEmbed(
+          "🏷️ تغيير رتب عضو",
+          "Blue"
+        )
+          .addFields({
+            name: "👤 العضو",
+            value: `${newMember}`,
+            inline: true
+          });
+
+      if (added.size) {
+        embed.addFields({
+          name: "🟢 تمت الإضافة",
+          value:
+            added.map(r => `${r}`).join(", ") ||
+            "لا يوجد"
+        });
+      }
+
+      if (removed.size) {
+        embed.addFields({
+          name: "🔴 تمت الإزالة",
+          value:
+            removed.map(r => `${r}`).join(", ") ||
+            "لا يوجد"
+        });
+      }
+
+      await sendLog(
+        newMember.guild,
+        "roles",
+        embed
+      );
+    }
+  }
+);
+
+// ==================================================
+// لوق الرومات
+// ==================================================
+
+client.on(
+  "channelCreate",
+  async channel => {
+    if (!channel.guild) return;
+
+    await sendLog(
+      channel.guild,
+      "channels",
+      logEmbed(
+        "📁 إنشاء روم",
+        "Green"
+      ).addFields(
+        {
+          name: "📁 الروم",
+          value: `${channel}`,
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value: channel.id,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+client.on(
+  "channelDelete",
+  async channel => {
+    if (!channel.guild) return;
+
+    await sendLog(
+      channel.guild,
+      "channels",
+      logEmbed(
+        "🗑️ حذف روم",
+        "Red"
+      ).addFields(
+        {
+          name: "📁 الاسم",
+          value: channel.name || "غير معروف",
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value: channel.id,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+// ==================================================
+// لوق الرسائل
+// ==================================================
+
+client.on(
+  "messageDelete",
+  async message => {
+    if (
+      !message.guild ||
+      message.author?.bot
+    ) {
+      return;
+    }
+
+    await sendLog(
+      message.guild,
+      "messages",
+      logEmbed(
+        "🗑️ حذف رسالة",
+        "Red"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value:
+            `${message.author || "غير معروف"}`,
+          inline: true
+        },
+        {
+          name: "📁 الروم",
+          value:
+            `${message.channel}`,
+          inline: true
+        },
+        {
+          name: "💬 الرسالة",
+          value:
+            truncate(
+              message.content ||
+              "لا يوجد محتوى",
+              1000
+            )
+        }
+      )
+    );
+  }
+);
+
+client.on(
+  "messageUpdate",
+  async (oldMessage, newMessage) => {
+    if (
+      !oldMessage.guild ||
+      oldMessage.author?.bot
+    ) {
+      return;
+    }
+
+    if (
+      oldMessage.content ===
+      newMessage.content
+    ) {
+      return;
+    }
+
+    await sendLog(
+      oldMessage.guild,
+      "messages",
+      logEmbed(
+        "✏️ تعديل رسالة",
+        "Orange"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value:
+            `${oldMessage.author}`,
+          inline: true
+        },
+        {
+          name: "📁 الروم",
+          value:
+            `${oldMessage.channel}`,
+          inline: true
+        },
+        {
+          name: "قبل",
+          value:
+            truncate(
+              oldMessage.content ||
+              "فارغ"
+            )
+        },
+        {
+          name: "بعد",
+          value:
+            truncate(
+              newMessage.content ||
+              "فارغ"
+            )
+        }
+      )
+    );
+  }
+);
+
+// ==================================================
+// لوق الصوت
+// ==================================================
+
+client.on(
+  "voiceStateUpdate",
+  async (oldState, newState) => {
+    if (
+      oldState.channelId ===
+      newState.channelId
+    ) {
+      return;
+    }
+
+    let action = "🔊 تغيير الصوت";
+
+    if (
+      !oldState.channelId &&
+      newState.channelId
+    ) {
+      action = "📥 دخول صوتي";
+    }
+
+    if (
+      oldState.channelId &&
+      !newState.channelId
+    ) {
+      action = "📤 خروج صوتي";
+    }
+
+    await sendLog(
+      newState.guild,
+      "voice",
+      logEmbed(
+        action,
+        "Blue"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value: `${newState.member}`,
+          inline: true
+        },
+        {
+          name: "قبل",
+          value:
+            oldState.channel
+              ? `${oldState.channel}`
+              : "لا يوجد",
+          inline: true
+        },
+        {
+          name: "بعد",
+          value:
+            newState.channel
+              ? `${newState.channel}`
+              : "لا يوجد",
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+// ==================================================
+// البان والكيك
+// ==================================================
+
+client.on(
+  "guildBanAdd",
+  async ban => {
+    await sendLog(
+      ban.guild,
+      "moderation",
+      logEmbed(
+        "🔨 حظر عضو",
+        "Red"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value:
+            `${ban.user}`,
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value:
+            ban.user.id,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+client.on(
+  "guildBanRemove",
+  async ban => {
+    await sendLog(
+      ban.guild,
+      "moderation",
+      logEmbed(
+        "🔓 فك حظر عضو",
+        "Green"
+      ).addFields(
+        {
+          name: "👤 العضو",
+          value:
+            `${ban.user}`,
+          inline: true
+        },
+        {
+          name: "🆔 الآيدي",
+          value:
+            ban.user.id,
+          inline: true
+        }
+      )
+    );
+  }
+);
+
+// ==================================================
+// دخول البوت
 // ==================================================
 
 client.login(TOKEN);
