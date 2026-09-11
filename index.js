@@ -94,9 +94,6 @@ const COUNTER_FILE = "counters.json";
 const AUTOREPLY_FILE = "autoreplies.json";
 const LEVELS_FILE = "levels.json";
 
-// ملف روم إشعارات الترقية
-const XP_LEVELUP_CHANNEL_FILE = "xp-levelup-channel.json";
-
 // =========================
 // البوت
 // =========================
@@ -170,7 +167,9 @@ function loadAutoReplies() {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(AUTOREPLY_FILE, "utf8"));
+    return JSON.parse(
+      fs.readFileSync(AUTOREPLY_FILE, "utf8")
+    );
   } catch (error) {
     console.error("❌ خطأ في قراءة autoreplies.json");
     return {};
@@ -195,7 +194,9 @@ function loadLevels() {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"));
+    return JSON.parse(
+      fs.readFileSync(LEVELS_FILE, "utf8")
+    );
   } catch (error) {
     console.error("❌ خطأ في قراءة levels.json");
     return {};
@@ -210,43 +211,6 @@ function saveLevels(data) {
   );
 }
 
-// =========================
-// نظام روم إشعارات الفل
-// =========================
-
-function loadXPLevelUpChannel() {
-  if (!fs.existsSync(XP_LEVELUP_CHANNEL_FILE)) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(
-      fs.readFileSync(
-        XP_LEVELUP_CHANNEL_FILE,
-        "utf8"
-      )
-    );
-  } catch (error) {
-    console.error(
-      "❌ خطأ في قراءة xp-levelup-channel.json"
-    );
-
-    return {};
-  }
-}
-
-function saveXPLevelUpChannel(data) {
-  fs.writeFileSync(
-    XP_LEVELUP_CHANNEL_FILE,
-    JSON.stringify(data, null, 2),
-    "utf8"
-  );
-}
-
-// =========================
-// XP المطلوب لكل مستوى
-// =========================
-
 function xpNeededForLevel(level) {
   return level * 100;
 }
@@ -260,9 +224,7 @@ const xpCooldown = new Map();
 async function sendTicketLog(guild, message) {
   try {
     const logChannel =
-      guild.channels.cache.get(
-        TICKET_LOG_CHANNEL_ID
-      );
+      guild.channels.cache.get(TICKET_LOG_CHANNEL_ID);
 
     if (!logChannel) {
       console.error(
@@ -291,6 +253,7 @@ async function sendTicketLog(guild, message) {
 // =========================
 
 function addRoleOptions(command) {
+
   command.addRoleOption(option =>
     option
       .setName("الرتبة-الأساسية")
@@ -299,12 +262,14 @@ function addRoleOptions(command) {
   );
 
   for (let i = 1; i <= 19; i++) {
+
     command.addRoleOption(option =>
       option
         .setName(`رتبة-جانبية-${i}`)
         .setDescription(`رتبة جانبية ${i}`)
         .setRequired(false)
     );
+
   }
 
   return command;
@@ -477,6 +442,25 @@ const commands = [
     ),
 
   // =========================
+  // حذف رسائل
+  // =========================
+
+  new SlashCommandBuilder()
+    .setName("حذف-رسائل")
+    .setDescription("حذف عدد من رسائل الروم بسرعة")
+    .addIntegerOption(option =>
+      option
+        .setName("العدد")
+        .setDescription("عدد الرسائل المراد حذفها")
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(1000)
+    )
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageMessages
+    ),
+
+  // =========================
   // الردود التلقائية
   // =========================
 
@@ -567,21 +551,6 @@ const commands = [
     ),
 
   // =========================
-  // تحديد روم إشعارات الفل
-  // =========================
-
-  new SlashCommandBuilder()
-    .setName("تحديد-روم-الفل")
-    .setDescription("تحديد الروم الذي تظهر فيه إشعارات الترقية")
-    .addChannelOption(option =>
-      option
-        .setName("الروم")
-        .setDescription("الروم الذي تظهر فيه رسائل الترقية")
-        .setRequired(true)
-        .addChannelTypes(ChannelType.GuildText)
-    ),
-
-  // =========================
   // لوحة التذاكر
   // =========================
 
@@ -603,11 +572,15 @@ const commands = [
 // =========================
 
 async function registerCommands() {
+
   try {
+
     console.log("⏳ جاري إنشاء أوامر السلاش...");
 
     const rest =
-      new REST({ version: "10" }).setToken(TOKEN);
+      new REST({
+        version: "10"
+      }).setToken(TOKEN);
 
     const result =
       await rest.put(
@@ -625,12 +598,15 @@ async function registerCommands() {
     );
 
   } catch (error) {
+
     console.error(
       "❌ خطأ أثناء إنشاء أوامر السلاش:"
     );
 
     console.error(error);
+
   }
+
 }
 
 // =========================
@@ -670,7 +646,9 @@ client.on(
       const content =
         message.content.toLowerCase();
 
-      for (const trigger in replies) {
+      for (
+        const trigger in replies
+      ) {
 
         if (
           content.includes(
@@ -684,6 +662,7 @@ client.on(
 
           break;
         }
+
       }
 
     } catch (error) {
@@ -712,11 +691,11 @@ client.on(
           cooldownKey
         ) || 0;
 
-      // XP مرة كل دقيقة لكل عضو
       if (
         now - lastTime <
         60 * 1000
       ) {
+
         return;
       }
 
@@ -750,7 +729,6 @@ client.on(
       const entry =
         data[guildId][userId];
 
-      // من 15 إلى 25 XP
       const earnedXp =
         Math.floor(
           Math.random() * 11
@@ -759,10 +737,6 @@ client.on(
       entry.xp += earnedXp;
 
       let leveledUp = false;
-
-      // =========================
-      // الترقية
-      // =========================
 
       while (
         entry.xp >=
@@ -784,39 +758,15 @@ client.on(
       saveLevels(data);
 
       // =========================
-      // إشعار الترقية
+      // رسالة الترقية
       // =========================
 
       if (leveledUp) {
 
-        const levelUpChannels =
-          loadXPLevelUpChannel();
-
-        const levelUpChannelId =
-          levelUpChannels[
-            message.guild.id
-          ];
-
-        if (levelUpChannelId) {
-
-          const levelUpChannel =
-            message.guild.channels.cache.get(
-              levelUpChannelId
-            );
-
-          if (levelUpChannel) {
-
-            await levelUpChannel
-              .send({
-                content:
-                  `🎉 مبروك ${message.author}!\n\n` +
-                  `لقد ترقيت إلى المستوى **${entry.level}** 🎊`
-              })
-              .catch(() => {});
-
-          }
-
-        }
+        message.channel.send(
+          `🎉 **لقد ترقيت!**\n` +
+          `🏆 وصلت إلى المستوى **${entry.level}**`
+        ).catch(() => {});
 
       }
 
@@ -836,9 +786,7 @@ client.on(
 // دالة الحصول على رقم التذكرة
 // =========================
 
-function getNextTicketNumber(
-  guildId
-) {
+function getNextTicketNumber(guildId) {
 
   const data =
     loadCounters();
@@ -848,8 +796,7 @@ function getNextTicketNumber(
   }
 
   if (
-    typeof data.tickets[guildId] !==
-      "number" ||
+    typeof data.tickets[guildId] !== "number" ||
     data.tickets[guildId] < 100
   ) {
 
@@ -1001,7 +948,9 @@ client.on(
             );
 
         return interaction.update({
-          components: [newRow]
+          components: [
+            newRow
+          ]
         });
 
       }
@@ -1249,8 +1198,7 @@ client.on(
       ) {
 
         const topic =
-          interaction.channel.topic ||
-          "";
+          interaction.channel.topic || "";
 
         const ownerMatch =
           topic.match(
@@ -1326,6 +1274,7 @@ client.on(
         }, 5000);
 
         return;
+
       }
 
       // ==========================================
@@ -1524,7 +1473,9 @@ client.on(
               .setTimestamp();
 
           await member.send({
-            embeds: [embed]
+            embeds: [
+              embed
+            ]
           });
 
         } catch {
@@ -1566,8 +1517,7 @@ client.on(
         const reason =
           interaction.options.getString(
             "السبب"
-          ) ||
-          "غير محدد";
+          ) || "غير محدد";
 
         const member =
           await interaction.guild.members.fetch(
@@ -1587,8 +1537,12 @@ client.on(
           data[guildId] = {};
         }
 
-        if (!data[guildId][userId]) {
+        if (
+          !data[guildId][userId]
+        ) {
+
           data[guildId][userId] = 0;
+
         }
 
         data[guildId][userId]++;
@@ -1631,7 +1585,9 @@ client.on(
               .setTimestamp();
 
           await member.send({
-            embeds: [embed]
+            embeds: [
+              embed
+            ]
           });
 
         } catch {
@@ -1643,6 +1599,7 @@ client.on(
         }
 
         return;
+
       }
 
       // ==========================================
@@ -1773,9 +1730,7 @@ client.on(
 
         const embed =
           new EmbedBuilder()
-            .setTitle(
-              "📢 إعلان"
-            )
+            .setTitle("📢 إعلان")
             .setDescription(
               message
             )
@@ -1783,7 +1738,9 @@ client.on(
             .setTimestamp();
 
         await channel.send({
-          embeds: [embed]
+          embeds: [
+            embed
+          ]
         });
 
         return interaction.reply({
@@ -1869,6 +1826,144 @@ client.on(
             `✅ تم إرسال الرسالة مع زر العداد في ${channel}.`,
 
           ephemeral: true
+
+        });
+
+      }
+
+      // ==========================================
+      // حذف رسائل الروم
+      // ==========================================
+
+      if (
+        interaction.commandName ===
+        "حذف-رسائل"
+      ) {
+
+        const amount =
+          interaction.options.getInteger(
+            "العدد"
+          );
+
+        const channel =
+          interaction.channel;
+
+        if (
+          !channel ||
+          channel.type !==
+            ChannelType.GuildText
+        ) {
+
+          return interaction.reply({
+
+            content:
+              "❌ لا يمكن استخدام الأمر في هذا الروم.",
+
+            ephemeral: true
+
+          });
+
+        }
+
+        // =========================
+        // التأكد من صلاحيات البوت
+        // =========================
+
+        const botMember =
+          interaction.guild.members.me;
+
+        if (
+          !botMember ||
+          !channel
+            .permissionsFor(botMember)
+            .has(
+              PermissionFlagsBits.ManageMessages
+            )
+        ) {
+
+          return interaction.reply({
+
+            content:
+              "❌ البوت لا يملك صلاحية إدارة الرسائل في هذا الروم.",
+
+            ephemeral: true
+
+          });
+
+        }
+
+        await interaction.deferReply({
+          ephemeral: true
+        });
+
+        let remaining =
+          amount;
+
+        let deletedTotal =
+          0;
+
+        // =========================
+        // حذف سريع على دفعات
+        // =========================
+
+        while (
+          remaining > 0
+        ) {
+
+          const batch =
+            Math.min(
+              remaining,
+              100
+            );
+
+          try {
+
+            const deleted =
+              await channel.bulkDelete(
+                batch,
+                true
+              );
+
+            const deletedCount =
+              deleted.size;
+
+            deletedTotal +=
+              deletedCount;
+
+            remaining -=
+              batch;
+
+            // إذا لم يعد هناك رسائل قابلة للحذف
+            if (
+              deletedCount === 0
+            ) {
+
+              break;
+
+            }
+
+          } catch (error) {
+
+            console.error(
+              "❌ خطأ أثناء حذف الرسائل:",
+              error
+            );
+
+            break;
+
+          }
+
+        }
+
+        return interaction.editReply({
+
+          content:
+            `🗑️ تم حذف **${deletedTotal}** رسالة بنجاح.` +
+            (
+              deletedTotal < amount
+                ? `\n⚠️ تعذر حذف بعض الرسائل، غالبًا لأنها أقدم من 14 يومًا أو لا يمكن للبوت حذفها.`
+                : ""
+            )
 
         });
 
@@ -2147,62 +2242,6 @@ client.on(
       }
 
       // ==========================================
-      // تحديد روم إشعارات الفل
-      // ==========================================
-
-      if (
-        interaction.commandName ===
-        "تحديد-روم-الفل"
-      ) {
-
-        if (
-          !isStaff(
-            interaction.member
-          )
-        ) {
-
-          return interaction.reply({
-
-            content:
-              "❌ ليس لديك صلاحية استخدام هذا الأمر.",
-
-            ephemeral: true
-
-          });
-
-        }
-
-        const channel =
-          interaction.options.getChannel(
-            "الروم"
-          );
-
-        const data =
-          loadXPLevelUpChannel();
-
-        data[
-          interaction.guild.id
-        ] =
-          channel.id;
-
-        saveXPLevelUpChannel(
-          data
-        );
-
-        return interaction.reply({
-
-          content:
-            `✅ تم تحديد روم إشعارات الفل: ${channel}\n\n` +
-            `📈 الـXP ينحسب من **جميع الرومات**، ` +
-            `وهذا الروم مخصص فقط لإشعارات الترقية.`,
-
-          ephemeral: true
-
-        });
-
-      }
-
-      // ==========================================
       // مستواي
       // ==========================================
 
@@ -2304,7 +2343,10 @@ client.on(
 
               }
             )
-            .slice(0, 10);
+            .slice(
+              0,
+              10
+            );
 
         if (
           sorted.length === 0
@@ -2514,29 +2556,25 @@ client.on(
         interaction.deferred
       ) {
 
-        await interaction
-          .followUp({
+        await interaction.followUp({
 
-            content:
-              "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
 
-            ephemeral: true
+          ephemeral: true
 
-          })
-          .catch(() => {});
+        }).catch(() => {});
 
       } else {
 
-        await interaction
-          .reply({
+        await interaction.reply({
 
-            content:
-              "❌ حدث خطأ أثناء تنفيذ الأمر.",
+          content:
+            "❌ حدث خطأ أثناء تنفيذ الأمر.",
 
-            ephemeral: true
+          ephemeral: true
 
-          })
-          .catch(() => {});
+        }).catch(() => {});
 
       }
 
@@ -2572,8 +2610,7 @@ async function handleTicketType(
   }
 
   const topic =
-    interaction.channel.topic ||
-    "";
+    interaction.channel.topic || "";
 
   // =========================
   // التأكد من صاحب التذكرة
@@ -2700,7 +2737,9 @@ async function handleTicketType(
     );
 
   await interaction.channel
-    .setTopic(newTopic)
+    .setTopic(
+      newTopic
+    )
     .catch(() => {});
 
   // =========================
@@ -2708,9 +2747,7 @@ async function handleTicketType(
   // =========================
 
   const disabledRow =
-    createTicketTypeRow(
-      true
-    );
+    createTicketTypeRow(true);
 
   // =========================
   // تحديث رسالة الأزرار
@@ -2738,7 +2775,9 @@ async function handleTicketType(
         `@here\n@everyone\n\n${formText}`,
 
       allowedMentions: {
-        parse: ["everyone"]
+        parse: [
+          "everyone"
+        ]
       }
 
     });
@@ -2769,6 +2808,7 @@ async function handleTicketType(
       : "غير معروف";
 
   await sendTicketLog(
+
     interaction.guild,
 
     `📌 **تم اختيار نوع التذكرة**\n\n` +
@@ -2776,6 +2816,7 @@ async function handleTicketType(
     `🔢 رقم التذكرة: **${ticketNumber}**\n` +
     `📁 التذكرة: ${interaction.channel}\n` +
     `📌 النوع: **${type}**`
+
   );
 
 }
@@ -2784,8 +2825,8 @@ async function handleTicketType(
 // تسجيل الدخول
 // =========================
 
-client
-  .login(TOKEN)
+client.login(TOKEN)
+
   .then(() => {
 
     console.log(
@@ -2793,6 +2834,7 @@ client
     );
 
   })
+
   .catch(error => {
 
     console.error(
