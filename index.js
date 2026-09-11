@@ -5,7 +5,10 @@ const {
   Routes,
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder
 } = require("discord.js");
 
 const fs = require("fs");
@@ -50,6 +53,7 @@ if (!TOKEN || !GUILD_ID || !CLIENT_ID) {
 // =========================
 
 const WARN_FILE = "warnings.json";
+const COUNTER_FILE = "counters.json";
 
 const client = new Client({
   intents: [
@@ -78,6 +82,31 @@ function loadWarnings() {
 function saveWarnings(data) {
   fs.writeFileSync(
     WARN_FILE,
+    JSON.stringify(data, null, 2),
+    "utf8"
+  );
+}
+
+// =========================
+// نظام زر العداد
+// =========================
+
+function loadCounters() {
+  if (!fs.existsSync(COUNTER_FILE)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(COUNTER_FILE, "utf8"));
+  } catch (error) {
+    console.error("❌ خطأ في قراءة counters.json");
+    return {};
+  }
+}
+
+function saveCounters(data) {
+  fs.writeFileSync(
+    COUNTER_FILE,
     JSON.stringify(data, null, 2),
     "utf8"
   );
@@ -257,6 +286,33 @@ const commands = [
 
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ManageMessages
+    ),
+
+  // ==========================================
+  // زر عداد
+  // ==========================================
+
+  new SlashCommandBuilder()
+    .setName("زر-عداد")
+    .setDescription("إرسال رسالة مع زر صح وعداد يزيد عند الضغط (مرة واحدة لكل عضو)")
+
+    .addChannelOption(option =>
+      option
+        .setName("مكان-الإرسال")
+        .setDescription("الروم الذي سيتم الإرسال فيه")
+        .setRequired(true)
+        .addChannelTypes(0)
+    )
+
+    .addStringOption(option =>
+      option
+        .setName("الرسالة")
+        .setDescription("نص الرسالة")
+        .setRequired(true)
+    )
+
+    .setDefaultMemberPermissions(
+      PermissionFlagsBits.ManageMessages
     )
 
 ].map(command => command.toJSON());
@@ -310,18 +366,78 @@ client.once("ready", async () => {
 });
 
 // =========================
-// التعامل مع أوامر السلاش
+// التعامل مع التفاعلات (أوامر السلاش + الأزرار)
 // =========================
 
 client.on(
   "interactionCreate",
   async interaction => {
 
-    if (!interaction.isChatInputCommand()) {
-      return;
-    }
-
     try {
+
+      // ==========================================
+      // التعامل مع ضغط زر العداد
+      // ==========================================
+
+      if (
+        interaction.isButton() &&
+        interaction.customId.startsWith("عداد_")
+      ) {
+
+        const counterId =
+          interaction.customId.replace("عداد_", "");
+
+        const data =
+          loadCounters();
+
+        if (!data[counterId]) {
+          data[counterId] = {
+            count: 0,
+            users: []
+          };
+        }
+
+        const entry = data[counterId];
+
+        if (entry.users.includes(interaction.user.id)) {
+
+          return interaction.reply({
+            content:
+              "⚠️ أنت ضغطت الزر من قبل، لا يمكنك الضغط مرة أخرى.",
+            ephemeral: true
+          });
+
+        }
+
+        entry.users.push(interaction.user.id);
+        entry.count++;
+
+        saveCounters(data);
+
+        const newButton =
+          new ButtonBuilder()
+            .setCustomId(interaction.customId)
+            .setLabel(`✅ ${entry.count}`)
+            .setStyle(ButtonStyle.Success);
+
+        const newRow =
+          new ActionRowBuilder().addComponents(
+            newButton
+          );
+
+        return interaction.update({
+          components: [newRow]
+        });
+
+      }
+
+      // ==========================================
+      // من هنا وتحت: أوامر السلاش فقط
+      // ==========================================
+
+      if (!interaction.isChatInputCommand()) {
+        return;
+      }
 
       // ==========================================
       // إعطاء رتبة
@@ -696,6 +812,62 @@ client.on(
         return interaction.reply({
           content:
             `✅ تم إرسال الإعلان في ${channel}.`,
+          ephemeral: true
+        });
+
+      }
+
+      // ==========================================
+      // زر عداد
+      // ==========================================
+
+      if (
+        interaction.commandName === "زر-عداد"
+      ) {
+
+        const channel =
+          interaction.options.getChannel(
+            "مكان-الإرسال"
+          );
+
+        const messageText =
+          interaction.options.getString(
+            "الرسالة"
+          );
+
+        // معرف فريد لهذا العداد
+        const counterId =
+          `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+        const data =
+          loadCounters();
+
+        data[counterId] = {
+          count: 0,
+          users: []
+        };
+
+        saveCounters(data);
+
+        const button =
+          new ButtonBuilder()
+            .setCustomId(`عداد_${counterId}`)
+            .setLabel("✅ 0")
+            .setStyle(ButtonStyle.Success);
+
+        const row =
+          new ActionRowBuilder().addComponents(
+            button
+          );
+
+        await channel.send({
+          content: messageText,
+          components: [row]
+        });
+
+        return interaction.reply({
+          content:
+            `✅ تم إرسال الرسالة مع زر العداد في ${channel}.`,
           ephemeral: true
         });
 
