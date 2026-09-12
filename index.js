@@ -9,8 +9,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
-  ChannelType,
-  AuditLogEvent
+  ChannelType
 } = require("discord.js");
 
 const fs = require("fs");
@@ -58,7 +57,7 @@ const TICKET_STAFF_ROLE_ID = "1441509616151298270";
 const FIXED_TICKET_LOG_ID = "1458146908747989042";
 
 // ==================================================
-// الملفات
+// أسماء البيانات
 // ==================================================
 
 const WARN_FILE = "warnings.json";
@@ -66,10 +65,16 @@ const COUNTER_FILE = "counters.json";
 const AUTOREPLY_FILE = "autoreplies.json";
 const LEVELS_FILE = "levels.json";
 const LEVELUP_CHANNEL_FILE = "levelupchannel.json";
-
 const APPLICATION_FILE = "applications.json";
 const APPLICATION_SESSION_FILE = "application_sessions.json";
 const LOG_FILE = "logchannels.json";
+
+// ==================================================
+// روم تخزين البيانات
+// ==================================================
+
+const DATA_CHANNEL_NAME = "「・بيانات-البوت・」";
+const DATA_PREFIX = "AN_DATA|";
 
 // ==================================================
 // البوت
@@ -88,30 +93,433 @@ const client = new Client({
 });
 
 // ==================================================
-// JSON
+// ذاكرة البيانات
 // ==================================================
 
-function loadJSON(file) {
-  if (!fs.existsSync(file)) {
-    return {};
-  }
+const dataCache = new Map();
+const saveQueues = new Map();
+const dataReady = new Map();
 
+let dataChannelLocks = new Map();
+
+// ==================================================
+// أسماء الملفات
+// ==================================================
+
+const DATA_FILES = [
+  WARN_FILE,
+  COUNTER_FILE,
+  AUTOREPLY_FILE,
+  LEVELS_FILE,
+  LEVELUP_CHANNEL_FILE,
+  APPLICATION_FILE,
+  APPLICATION_SESSION_FILE,
+  LOG_FILE
+];
+
+// ==================================================
+// أدوات البيانات
+// ==================================================
+
+function getFileKey(file) {
+  return file;
+}
+
+function encodeData(data) {
+  return Buffer
+    .from(JSON.stringify(data), "utf8")
+    .toString("base64");
+}
+
+function decodeData(data) {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.parse(
+      Buffer
+        .from(data, "base64")
+        .toString("utf8")
+    );
   } catch {
     return {};
   }
 }
 
-function saveJSON(file, data) {
-  try {
-    fs.writeFileSync(
-      file,
-      JSON.stringify(data, null, 2),
-      "utf8"
+function splitIntoChunks(text, size = 1500) {
+  const chunks = [];
+
+  for (let i = 0; i < text.length; i += size) {
+    chunks.push(text.slice(i, i + size));
+  }
+
+  return chunks.length ? chunks : [""];
+}
+
+// ==================================================
+// إنشاء روم البيانات
+// ==================================================
+
+async function getDataChannel(guild) {
+  if (!guild) return null;
+
+  const lockKey = guild.id;
+
+  if (dataChannelLocks.has(lockKey)) {
+    return dataChannelLocks.get(lockKey);
+  }
+
+  const promise = (async () => {
+    try {
+      await guild.channels.fetch();
+
+      let channel = guild.channels.cache.find(
+        c =>
+          c.type === ChannelType.GuildText &&
+          c.name === DATA_CHANNEL_NAME
+      );
+
+      if (channel) {
+        return channel;
+      }
+
+      const me = guild.members.me ||
+        await guild.members.fetch(client.user.id).catch(() => null);
+
+      if (!me) {
+        console.error("❌ ما قدرت أجيب عضو البوت.");
+        return null;
+      }
+
+      channel = await guild.channels.create({
+        name: DATA_CHANNEL_NAME,
+        type: ChannelType.GuildText,
+        topic: "AN BOT DATA STORAGE - لا تحذف هذا الروم",
+        permissionOverwrites: [
+          {
+            id: guild.roles.everyone.id,
+            deny: [
+              PermissionFlagsBits.ViewChannel
+            ]
+          },
+          {
+            id: client.user.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.ManageMessages
+            ]
+          }
+        ]
+      }).catch(error => {
+        console.error(
+          "❌ خطأ إنشاء روم البيانات:",
+          error.message
+        );
+        return null;
+      });
+
+      return channel;
+    } finally {
+      dataChannelLocks.delete(lockKey);
+    }
+  })();
+
+  dataChannelLocks.set(lockKey, promise);
+
+  return promise;
+}
+
+// ==================================================
+// قراءة كل رسائل روم البيانات
+// ==================================================
+
+async function fetchAllMessages(channel) {
+  const messages = new Map();
+  let before = undefined;
+
+  while (true) {
+    const options = {
+      limit: 100
+    };
+
+    if (before) {
+      options.before = before;
+    }
+
+    const batch = await channel.messages.fetch(options)
+      .catch(() => null);
+
+    if (!batch || batch.size === 0) {
+      break;
+    }
+
+    for (const message of batch.values()) {
+      messages.set(message.id, message);
+    }
+
+    if (batch.size < 100) {
+      break;
+    }
+
+    before = batch.last().id;
+  }
+
+  return [...messages.values()];
+}
+
+// ==================================================
+// تحميل البيانات من Discord
+// ==================================================
+
+async function loadDataFile(guild, file) {
+  const channel = await getDataChannel(guild);
+
+  if (!channel) {
+    return {};
+  }
+
+  const messages = await fetchAllMessages(channel);
+
+  const parts = [];
+
+  for (const message of messages) {
+    if (!message.content.startsWith(DATA_PREFIX)) {
+      continue;
+    }
+
+    const raw = message.content.slice(DATA_PREFIX.length);
+
+    const first = raw.indexOf("|");
+    const second = raw.indexOf("|", first + 1);
+    const third = raw.indexOf("|", second + 1);
+
+    if (
+      first === -1 ||
+      second === -1 ||
+      third === -1
+    ) {
+      continue;
+    }
+
+    const fileName =
+      raw.slice(0, first);
+
+    if (fileName !== file) {
+      continue;
+    }
+
+    const partNumber =
+      Number(
+        raw.slice(first + 1, second)
+      );
+
+    const total =
+      Number(
+        raw.slice(second + 1, third)
+      );
+
+    const encoded =
+      raw.slice(third + 1);
+
+    parts.push({
+      message,
+      partNumber,
+      total,
+      encoded
+    });
+  }
+
+  if (!parts.length) {
+    return {};
+  }
+
+  parts.sort(
+    (a, b) =>
+      a.partNumber - b.partNumber
+  );
+
+  const encoded =
+    parts.map(p => p.encoded).join("");
+
+  return decodeData(encoded);
+}
+
+// ==================================================
+// حفظ البيانات داخل Discord
+// ==================================================
+
+async function saveDataFile(guild, file, data) {
+  if (!guild) return;
+
+  const key =
+    `${guild.id}:${file}`;
+
+  const previous =
+    saveQueues.get(key) || Promise.resolve();
+
+  const next =
+    previous.then(async () => {
+      const channel =
+        await getDataChannel(guild);
+
+      if (!channel) return;
+
+      const encoded =
+        encodeData(data);
+
+      const chunks =
+        splitIntoChunks(encoded, 1450);
+
+      const messages =
+        await fetchAllMessages(channel);
+
+      const oldMessages =
+        messages.filter(message =>
+          message.content.startsWith(
+            `${DATA_PREFIX}${file}|`
+          )
+        );
+
+      for (const message of oldMessages) {
+        await message.delete()
+          .catch(() => {});
+      }
+
+      const total = chunks.length;
+
+      for (
+        let i = 0;
+        i < chunks.length;
+        i++
+      ) {
+        const content =
+          `${DATA_PREFIX}${file}|${i}|${total}|${chunks[i]}`;
+
+        await channel.send({
+          content
+        }).catch(error => {
+          console.error(
+            `❌ خطأ حفظ ${file}:`,
+            error.message
+          );
+        });
+      }
+    }).catch(error => {
+      console.error(
+        `❌ خطأ في طابور حفظ ${file}:`,
+        error
+      );
+    });
+
+  saveQueues.set(key, next);
+
+  await next;
+}
+
+// ==================================================
+// تهيئة البيانات
+// ==================================================
+
+async function initializeData(guild) {
+  if (!guild) return;
+
+  if (dataReady.has(guild.id)) {
+    return dataReady.get(guild.id);
+  }
+
+  const promise = (async () => {
+    console.log(
+      `💾 تحميل بيانات ${guild.name}...`
     );
-  } catch (error) {
-    console.error(`❌ خطأ حفظ ${file}:`, error);
+
+    await getDataChannel(guild);
+
+    for (const file of DATA_FILES) {
+      const data =
+        await loadDataFile(
+          guild,
+          file
+        );
+
+      dataCache.set(
+        `${guild.id}:${file}`,
+        data || {}
+      );
+    }
+
+    console.log(
+      `✅ تم تحميل بيانات ${guild.name}`
+    );
+  })();
+
+  dataReady.set(
+    guild.id,
+    promise
+  );
+
+  return promise;
+}
+
+// ==================================================
+// JSON API داخلي
+// ==================================================
+
+function getCachedData(guildId, file) {
+  const key =
+    `${guildId}:${file}`;
+
+  if (!dataCache.has(key)) {
+    dataCache.set(key, {});
+  }
+
+  return dataCache.get(key);
+}
+
+function setCachedData(guildId, file, data) {
+  dataCache.set(
+    `${guildId}:${file}`,
+    data
+  );
+}
+
+// ==================================================
+// JSON القديم - الآن يستخدم Discord
+// ==================================================
+
+function loadJSON(file) {
+  // يستخدم فقط كـ fallback محلي إذا احتجناه
+  if (!fs.existsSync(file)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      fs.readFileSync(file, "utf8")
+    );
+  } catch {
+    return {};
+  }
+}
+
+// ==================================================
+// الحفظ
+// ==================================================
+
+function saveJSON(file, data, guildId = GUILD_ID) {
+  setCachedData(
+    guildId,
+    file,
+    data
+  );
+
+  const guild =
+    client.guilds.cache.get(guildId);
+
+  if (guild) {
+    saveDataFile(
+      guild,
+      file,
+      data
+    ).catch(() => {});
   }
 }
 
@@ -124,7 +532,9 @@ function isStaff(member) {
 
   return (
     member.roles.cache.has(STAFF_ROLE_ID) ||
-    member.permissions.has(PermissionFlagsBits.Administrator)
+    member.permissions.has(
+      PermissionFlagsBits.Administrator
+    )
   );
 }
 
@@ -133,7 +543,9 @@ function isTicketStaff(member) {
 
   return (
     member.roles.cache.has(TICKET_STAFF_ROLE_ID) ||
-    member.permissions.has(PermissionFlagsBits.Administrator)
+    member.permissions.has(
+      PermissionFlagsBits.Administrator
+    )
   );
 }
 
@@ -141,68 +553,124 @@ function isTicketStaff(member) {
 // البيانات
 // ==================================================
 
-function getWarnings() {
-  return loadJSON(WARN_FILE);
+function getWarnings(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    WARN_FILE
+  );
 }
 
-function saveWarnings(data) {
-  saveJSON(WARN_FILE, data);
+function saveWarnings(data, guildId = GUILD_ID) {
+  saveJSON(
+    WARN_FILE,
+    data,
+    guildId
+  );
 }
 
-function getAutoReplies() {
-  return loadJSON(AUTOREPLY_FILE);
+function getAutoReplies(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    AUTOREPLY_FILE
+  );
 }
 
-function saveAutoReplies(data) {
-  saveJSON(AUTOREPLY_FILE, data);
+function saveAutoReplies(data, guildId = GUILD_ID) {
+  saveJSON(
+    AUTOREPLY_FILE,
+    data,
+    guildId
+  );
 }
 
-function getLevels() {
-  return loadJSON(LEVELS_FILE);
+function getLevels(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    LEVELS_FILE
+  );
 }
 
-function saveLevels(data) {
-  saveJSON(LEVELS_FILE, data);
+function saveLevels(data, guildId = GUILD_ID) {
+  saveJSON(
+    LEVELS_FILE,
+    data,
+    guildId
+  );
 }
 
-function getCounters() {
-  return loadJSON(COUNTER_FILE);
+function getCounters(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    COUNTER_FILE
+  );
 }
 
-function saveCounters(data) {
-  saveJSON(COUNTER_FILE, data);
+function saveCounters(data, guildId = GUILD_ID) {
+  saveJSON(
+    COUNTER_FILE,
+    data,
+    guildId
+  );
 }
 
-function getLevelUpChannels() {
-  return loadJSON(LEVELUP_CHANNEL_FILE);
+function getLevelUpChannels(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    LEVELUP_CHANNEL_FILE
+  );
 }
 
-function saveLevelUpChannels(data) {
-  saveJSON(LEVELUP_CHANNEL_FILE, data);
+function saveLevelUpChannels(data, guildId = GUILD_ID) {
+  saveJSON(
+    LEVELUP_CHANNEL_FILE,
+    data,
+    guildId
+  );
 }
 
-function getApplications() {
-  return loadJSON(APPLICATION_FILE);
+function getApplications(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    APPLICATION_FILE
+  );
 }
 
-function saveApplications(data) {
-  saveJSON(APPLICATION_FILE, data);
+function saveApplications(data, guildId = GUILD_ID) {
+  saveJSON(
+    APPLICATION_FILE,
+    data,
+    guildId
+  );
 }
 
-function getApplicationSessions() {
-  return loadJSON(APPLICATION_SESSION_FILE);
+function getApplicationSessions(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    APPLICATION_SESSION_FILE
+  );
 }
 
-function saveApplicationSessions(data) {
-  saveJSON(APPLICATION_SESSION_FILE, data);
+function saveApplicationSessions(data, guildId = GUILD_ID) {
+  saveJSON(
+    APPLICATION_SESSION_FILE,
+    data,
+    guildId
+  );
 }
 
-function getLogs() {
-  return loadJSON(LOG_FILE);
+function getLogs(guildId = GUILD_ID) {
+  return getCachedData(
+    guildId,
+    LOG_FILE
+  );
 }
 
-function saveLogs(data) {
-  saveJSON(LOG_FILE, data);
+function saveLogs(data, guildId = GUILD_ID) {
+  saveJSON(
+    LOG_FILE,
+    data,
+    guildId
+  );
 }
 
 // ==================================================
@@ -664,46 +1132,47 @@ commands.push(
 // تسطيب تقديم
 // ==================================================
 
-const setupApplication = new SlashCommandBuilder()
-  .setName("تسطيب-تقديم")
-  .setDescription("تسطيب نظام التقديم")
+const setupApplication =
+  new SlashCommandBuilder()
+    .setName("تسطيب-تقديم")
+    .setDescription("تسطيب نظام التقديم")
 
-  .addChannelOption(option =>
-    option
-      .setName("مكان-التقديم")
-      .setDescription("روم لوحة التقديم")
-      .addChannelTypes(ChannelType.GuildText)
-      .setRequired(true)
-  )
+    .addChannelOption(option =>
+      option
+        .setName("مكان-التقديم")
+        .setDescription("روم لوحة التقديم")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
 
-  .addChannelOption(option =>
-    option
-      .setName("مكان-المراجعة")
-      .setDescription("روم مراجعة التقديمات")
-      .addChannelTypes(ChannelType.GuildText)
-      .setRequired(true)
-  )
+    .addChannelOption(option =>
+      option
+        .setName("مكان-المراجعة")
+        .setDescription("روم مراجعة التقديمات")
+        .addChannelTypes(ChannelType.GuildText)
+        .setRequired(true)
+    )
 
-  .addRoleOption(option =>
-    option
-      .setName("رتبة-القبول")
-      .setDescription("اختياري: الرتبة بعد القبول")
-      .setRequired(false)
-  )
+    .addRoleOption(option =>
+      option
+        .setName("رتبة-القبول")
+        .setDescription("اختياري: الرتبة بعد القبول")
+        .setRequired(false)
+    )
 
-  .addRoleOption(option =>
-    option
-      .setName("رتبة-الإزالة")
-      .setDescription("اختياري: الرتبة التي تنشال")
-      .setRequired(false)
-  )
+    .addRoleOption(option =>
+      option
+        .setName("رتبة-الإزالة")
+        .setDescription("اختياري: الرتبة التي تنشال")
+        .setRequired(false)
+    )
 
-  .addStringOption(option =>
-    option
-      .setName("لون-الإيمبد")
-      .setDescription("اختياري: مثال #5865F2")
-      .setRequired(false)
-  );
+    .addStringOption(option =>
+      option
+        .setName("لون-الإيمبد")
+        .setDescription("اختياري: مثال #5865F2")
+        .setRequired(false)
+    );
 
 for (let i = 1; i <= 20; i++) {
   setupApplication.addStringOption(option =>
@@ -718,7 +1187,9 @@ setupApplication.setDefaultMemberPermissions(
   PermissionFlagsBits.ManageGuild.toString()
 );
 
-commands.push(setupApplication.toJSON());
+commands.push(
+  setupApplication.toJSON()
+);
 
 // ==================================================
 // تعديل تقديم
@@ -781,13 +1252,16 @@ commands.push(
 // تسجيل الأوامر
 // ==================================================
 
-const rest = new REST({
-  version: "10"
-}).setToken(TOKEN);
+const rest =
+  new REST({
+    version: "10"
+  }).setToken(TOKEN);
 
 async function registerCommands() {
   try {
-    console.log("🔄 تسجيل أوامر السلاش...");
+    console.log(
+      "🔄 تسجيل أوامر السلاش..."
+    );
 
     await rest.put(
       Routes.applicationGuildCommands(
@@ -811,7 +1285,7 @@ async function registerCommands() {
 }
 
 // ==================================================
-// إنشاء اللوقات
+// اللوقات
 // ==================================================
 
 const LOG_CHANNELS = {
@@ -827,57 +1301,135 @@ const LOG_CHANNELS = {
   commands: "لوق-الأوامر"
 };
 
-async function getOrCreateLogSystem(guild) {
-  const logs = getLogs();
+const logSetupLocks = new Map();
 
-  if (!logs[guild.id]) {
-    logs[guild.id] = {};
+async function getOrCreateLogSystem(guild) {
+  if (!guild) return null;
+
+  if (logSetupLocks.has(guild.id)) {
+    return logSetupLocks.get(guild.id);
   }
 
-  let category = guild.channels.cache.find(
-    channel =>
-      channel.type === ChannelType.GuildCategory &&
-      channel.name === "「・لوقات・」"
+  const promise = (async () => {
+    try {
+      await guild.channels.fetch();
+
+      const logs =
+        getLogs(guild.id);
+
+      if (!logs[guild.id]) {
+        logs[guild.id] = {};
+      }
+
+      let category =
+        guild.channels.cache.find(
+          channel =>
+            channel.type ===
+              ChannelType.GuildCategory &&
+            channel.name === "「・لوقات・」"
+        );
+
+      if (!category) {
+        category =
+          await guild.channels.create({
+            name: "「・لوقات・」",
+            type: ChannelType.GuildCategory
+          }).catch(() => null);
+      }
+
+      if (!category) {
+        return null;
+      }
+
+      for (
+        const [key, name]
+        of Object.entries(LOG_CHANNELS)
+      ) {
+        let channel = null;
+
+        const savedId =
+          logs[guild.id][key];
+
+        if (savedId) {
+          channel =
+            guild.channels.cache.get(
+              savedId
+            );
+
+          if (
+            !channel ||
+            channel.type !==
+              ChannelType.GuildText
+          ) {
+            channel = null;
+          }
+        }
+
+        if (!channel) {
+          channel =
+            guild.channels.cache.find(
+              c =>
+                c.type ===
+                  ChannelType.GuildText &&
+                c.name === name &&
+                c.parentId === category.id
+            );
+        }
+
+        if (!channel) {
+          channel =
+            guild.channels.cache.find(
+              c =>
+                c.type ===
+                  ChannelType.GuildText &&
+                c.name === name
+            );
+        }
+
+        if (!channel) {
+          channel =
+            await guild.channels.create({
+              name,
+              type: ChannelType.GuildText,
+              parent: category.id
+            }).catch(() => null);
+        }
+
+        if (channel) {
+          logs[guild.id][key] =
+            channel.id;
+        }
+      }
+
+      saveLogs(
+        logs,
+        guild.id
+      );
+
+      return logs[guild.id];
+    } finally {
+      logSetupLocks.delete(
+        guild.id
+      );
+    }
+  })();
+
+  logSetupLocks.set(
+    guild.id,
+    promise
   );
 
-  if (!category) {
-    category = await guild.channels.create({
-      name: "「・لوقات・」",
-      type: ChannelType.GuildCategory
-    }).catch(() => null);
-  }
-
-  if (!category) {
-    return null;
-  }
-
-  for (const [key, name] of Object.entries(LOG_CHANNELS)) {
-    let channel = guild.channels.cache.find(
-      c =>
-        c.type === ChannelType.GuildText &&
-        c.name === name
-    );
-
-    if (!channel) {
-      channel = await guild.channels.create({
-        name,
-        type: ChannelType.GuildText,
-        parent: category.id
-      }).catch(() => null);
-    }
-
-    if (channel) {
-      logs[guild.id][key] = channel.id;
-    }
-  }
-
-  saveLogs(logs);
-
-  return logs[guild.id];
+  return promise;
 }
 
-async function getLogChannel(guild, type) {
-  const logs = await getOrCreateLogSystem(guild);
+async function getLogChannel(
+  guild,
+  type
+) {
+  const logs =
+    await getOrCreateLogSystem(
+      guild
+    );
 
   if (!logs) return null;
 
@@ -886,9 +1438,16 @@ async function getLogChannel(guild, type) {
   ) || null;
 }
 
-async function sendLog(guild, type, embed) {
+async function sendLog(
+  guild,
+  type,
+  embed
+) {
   const channel =
-    await getLogChannel(guild, type);
+    await getLogChannel(
+      guild,
+      type
+    );
 
   if (!channel) return;
 
@@ -898,10 +1457,13 @@ async function sendLog(guild, type, embed) {
 }
 
 // ==================================================
-// لوق Embed
+// Log Embed
 // ==================================================
 
-function logEmbed(title, color = "#5865F2") {
+function logEmbed(
+  title,
+  color = "#5865F2"
+) {
   return new EmbedBuilder()
     .setTitle(title)
     .setColor(color)
@@ -912,8 +1474,11 @@ function logEmbed(title, color = "#5865F2") {
 // أرقام التذاكر
 // ==================================================
 
-function getNextTicketNumber(guildId) {
-  const counters = getCounters();
+function getNextTicketNumber(
+  guildId
+) {
+  const counters =
+    getCounters(guildId);
 
   if (!counters.tickets) {
     counters.tickets = {};
@@ -925,7 +1490,10 @@ function getNextTicketNumber(guildId) {
 
   counters.tickets[guildId]++;
 
-  saveCounters(counters);
+  saveCounters(
+    counters,
+    guildId
+  );
 
   return counters.tickets[guildId];
 }
@@ -934,55 +1502,83 @@ function getNextTicketNumber(guildId) {
 // البحث عن تذكرة
 // ==================================================
 
-function findOpenTicket(guild, userId) {
-  return guild.channels.cache.find(channel => {
-    if (channel.type !== ChannelType.GuildText) {
-      return false;
-    }
+function findOpenTicket(
+  guild,
+  userId
+) {
+  return guild.channels.cache.find(
+    channel => {
+      if (
+        channel.type !==
+        ChannelType.GuildText
+      ) {
+        return false;
+      }
 
-    return channel.topic?.includes(
-      `ticketOwner:${userId}`
-    );
-  });
+      return channel.topic?.includes(
+        `ticketOwner:${userId}`
+      );
+    }
+  );
 }
 
 // ==================================================
 // أزرار التذاكر
 // ==================================================
 
-function ticketTypeRow(disabled = false) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("نوع_تذكرة_شكوى")
-      .setLabel("تكت شكوى")
-      .setEmoji("📢")
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(disabled),
+function ticketTypeRow(
+  disabled = false
+) {
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          "نوع_تذكرة_شكوى"
+        )
+        .setLabel("تكت شكوى")
+        .setEmoji("📢")
+        .setStyle(
+          ButtonStyle.Danger
+        )
+        .setDisabled(disabled),
 
-    new ButtonBuilder()
-      .setCustomId("نوع_تذكرة_دعم")
-      .setLabel("تكت دعم فني")
-      .setEmoji("🛠️")
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(
+          "نوع_تذكرة_دعم"
+        )
+        .setLabel("تكت دعم فني")
+        .setEmoji("🛠️")
+        .setStyle(
+          ButtonStyle.Primary
+        )
+        .setDisabled(disabled),
 
-    new ButtonBuilder()
-      .setCustomId("نوع_تذكرة_شراكة")
-      .setLabel("تكت شراكة")
-      .setEmoji("🤝")
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(disabled)
-  );
+      new ButtonBuilder()
+        .setCustomId(
+          "نوع_تذكرة_شراكة"
+        )
+        .setLabel("تكت شراكة")
+        .setEmoji("🤝")
+        .setStyle(
+          ButtonStyle.Success
+        )
+        .setDisabled(disabled)
+    );
 }
 
 function ticketCloseRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("اغلاق_تذكرة")
-      .setLabel("إغلاق التذكرة")
-      .setEmoji("🔒")
-      .setStyle(ButtonStyle.Danger)
-  );
+  return new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          "اغلاق_تذكرة"
+        )
+        .setLabel("إغلاق التذكرة")
+        .setEmoji("🔒")
+        .setStyle(
+          ButtonStyle.Danger
+        )
+    );
 }
 
 // ==================================================
@@ -1043,30 +1639,38 @@ function partnershipForm() {
 }
 
 // ==================================================
-// إعداد التقديم
+// التقديم
 // ==================================================
 
-function getApplicationConfig(guildId) {
-  const data = getApplications();
+function getApplicationConfig(
+  guildId
+) {
+  const data =
+    getApplications(guildId);
 
-  return data[guildId]?.config || null;
+  return data[guildId]?.config ||
+    null;
 }
 
-function saveApplicationConfig(guildId, config) {
-  const data = getApplications();
+function saveApplicationConfig(
+  guildId,
+  config
+) {
+  const data =
+    getApplications(guildId);
 
   if (!data[guildId]) {
     data[guildId] = {};
   }
 
-  data[guildId].config = config;
+  data[guildId].config =
+    config;
 
-  saveApplications(data);
+  saveApplications(
+    data,
+    guildId
+  );
 }
-
-// ==================================================
-// أسئلة التقديم
-// ==================================================
 
 function getQuestions(config) {
   const questions = [];
@@ -1079,18 +1683,18 @@ function getQuestions(config) {
       question &&
       question.trim()
     ) {
-      questions.push(question.trim());
+      questions.push(
+        question.trim()
+      );
     }
   }
 
   return questions;
 }
 
-// ==================================================
-// إيمبد لوحة التقديم
-// ==================================================
-
-function buildApplicationPanel(config) {
+function buildApplicationPanel(
+  config
+) {
   const botAvatar =
     client.user.displayAvatarURL({
       extension: "png",
@@ -1137,10 +1741,12 @@ function buildApplicationPanel(config) {
 }
 
 // ==================================================
-// تشغيل التقديم
+// بدء التقديم
 // ==================================================
 
-async function startApplication(interaction) {
+async function startApplication(
+  interaction
+) {
   const config =
     getApplicationConfig(
       interaction.guild.id
@@ -1157,16 +1763,18 @@ async function startApplication(interaction) {
   const questions =
     getQuestions(config);
 
-  if (questions.length === 0) {
+  if (!questions.length) {
     return interaction.reply({
       content:
-        "❌ ما فيه أسئلة مضافة للتقديم.\nأضف سؤالًا واحدًا على الأقل باستخدام `/تسطيب-تقديم`.",
+        "❌ ما فيه أسئلة مضافة للتقديم.",
       ephemeral: true
     });
   }
 
   const sessions =
-    getApplicationSessions();
+    getApplicationSessions(
+      interaction.guild.id
+    );
 
   const key =
     `${interaction.guild.id}_${interaction.user.id}`;
@@ -1190,20 +1798,24 @@ async function startApplication(interaction) {
   } catch {
     return interaction.reply({
       content:
-        "❌ ما قدرت أرسل لك رسالة خاصة.\nافتح الخاص مع أعضاء السيرفر وحاول مرة ثانية.",
+        "❌ ما قدرت أرسل لك رسالة خاصة.",
       ephemeral: true
     });
   }
 
   sessions[key] = {
-    guildId: interaction.guild.id,
-    userId: interaction.user.id,
-    startedAt: Date.now(),
+    guildId:
+      interaction.guild.id,
+    userId:
+      interaction.user.id,
+    startedAt:
+      Date.now(),
     answers: []
   };
 
   saveApplicationSessions(
-    sessions
+    sessions,
+    interaction.guild.id
   );
 
   await interaction.reply({
@@ -1224,15 +1836,17 @@ async function startApplication(interaction) {
   ) {
     await dm.send(
       `**السؤال ${index + 1} من ${questions.length}**\n\n${questions[index]}`
-    ).catch(() => null);
+    ).catch(() => {});
 
     const collected =
       await dm.awaitMessages({
-        filter: message =>
-          message.author.id ===
-          interaction.user.id,
+        filter:
+          message =>
+            message.author.id ===
+            interaction.user.id,
         max: 1,
-        time: 5 * 60 * 1000
+        time:
+          5 * 60 * 1000
       }).catch(() => null);
 
     if (
@@ -1240,11 +1854,16 @@ async function startApplication(interaction) {
       collected.size === 0
     ) {
       await dm.send(
-        "❌ انتهى وقت الإجابة.\nيمكنك بدء تقديم جديد من لوحة التقديم."
+        "❌ انتهى وقت الإجابة."
       ).catch(() => {});
 
       delete sessions[key];
-      saveApplicationSessions(sessions);
+
+      saveApplicationSessions(
+        sessions,
+        interaction.guild.id
+      );
+
       return;
     }
 
@@ -1260,7 +1879,12 @@ async function startApplication(interaction) {
       ).catch(() => {});
 
       delete sessions[key];
-      saveApplicationSessions(sessions);
+
+      saveApplicationSessions(
+        sessions,
+        interaction.guild.id
+      );
+
       return;
     }
 
@@ -1270,15 +1894,24 @@ async function startApplication(interaction) {
       answers;
 
     saveApplicationSessions(
-      sessions
+      sessions,
+      interaction.guild.id
     );
   }
 
   const applications =
-    getApplications();
+    getApplications(
+      interaction.guild.id
+    );
 
-  if (!applications[interaction.guild.id]) {
-    applications[interaction.guild.id] = {};
+  if (
+    !applications[
+      interaction.guild.id
+    ]
+  ) {
+    applications[
+      interaction.guild.id
+    ] = {};
   }
 
   if (
@@ -1312,22 +1945,33 @@ async function startApplication(interaction) {
 
   applications[
     interaction.guild.id
-  ].records[applicationId] = {
+  ].records[
+    applicationId
+  ] = {
     id: applicationId,
-    guildId: interaction.guild.id,
-    userId: interaction.user.id,
-    username: interaction.user.tag,
+    guildId:
+      interaction.guild.id,
+    userId:
+      interaction.user.id,
+    username:
+      interaction.user.tag,
     answers,
     status: "pending",
-    createdAt: Date.now()
+    createdAt:
+      Date.now()
   };
 
   saveApplications(
-    applications
+    applications,
+    interaction.guild.id
   );
 
   delete sessions[key];
-  saveApplicationSessions(sessions);
+
+  saveApplicationSessions(
+    sessions,
+    interaction.guild.id
+  );
 
   const reviewChannel =
     interaction.guild.channels.cache.get(
@@ -1336,7 +1980,7 @@ async function startApplication(interaction) {
 
   if (!reviewChannel) {
     await dm.send(
-      "❌ روم المراجعة غير موجود، تواصل مع الإدارة."
+      "❌ روم المراجعة غير موجود."
     ).catch(() => {});
     return;
   }
@@ -1367,38 +2011,44 @@ async function startApplication(interaction) {
     i++
   ) {
     embed.addFields({
-      name: `${i + 1}️⃣ ${truncate(questions[i], 240)}`,
-      value: truncate(
-        answers[i] ||
-        "لم تتم الإجابة",
-        1024
-      ),
+      name:
+        `${i + 1}️⃣ ${truncate(
+          questions[i],
+          240
+        )}`,
+      value:
+        truncate(
+          answers[i] ||
+          "لم تتم الإجابة",
+          1024
+        ),
       inline: false
     });
   }
 
   const buttons =
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(
-          `قبول_تقديم_${applicationId}`
-        )
-        .setLabel("قبول")
-        .setEmoji("✅")
-        .setStyle(
-          ButtonStyle.Success
-        ),
+    new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            `قبول_تقديم_${applicationId}`
+          )
+          .setLabel("قبول")
+          .setEmoji("✅")
+          .setStyle(
+            ButtonStyle.Success
+          ),
 
-      new ButtonBuilder()
-        .setCustomId(
-          `رفض_تقديم_${applicationId}`
-        )
-        .setLabel("رفض")
-        .setEmoji("❌")
-        .setStyle(
-          ButtonStyle.Danger
-        )
-    );
+        new ButtonBuilder()
+          .setCustomId(
+            `رفض_تقديم_${applicationId}`
+          )
+          .setLabel("رفض")
+          .setEmoji("❌")
+          .setStyle(
+            ButtonStyle.Danger
+          )
+      );
 
   await reviewChannel.send({
     embeds: [embed],
@@ -1417,44 +2067,69 @@ async function startApplication(interaction) {
     logEmbed(
       "📝 تقديم جديد",
       "#5865F2"
+    ).addFields(
+      {
+        name: "👤 المتقدم",
+        value:
+          `${interaction.user}`,
+        inline: true
+      },
+      {
+        name: "🔢 رقم التقديم",
+        value:
+          `#${applicationId}`,
+        inline: true
+      }
     )
-      .addFields(
-        {
-          name: "👤 المتقدم",
-          value: `${interaction.user}`,
-          inline: true
-        },
-        {
-          name: "🔢 رقم التقديم",
-          value: `#${applicationId}`,
-          inline: true
-        }
-      )
   );
 }
 
 // ==================================================
-// جاهزية
+// READY
 // ==================================================
 
-client.once("ready", async () => {
-  console.log(
-    `✅ تم تسجيل الدخول باسم ${client.user.tag}`
-  );
+client.once(
+  "ready",
+  async () => {
+    console.log(
+      `✅ تم تسجيل الدخول باسم ${client.user.tag}`
+    );
 
-  await registerCommands();
+    for (
+      const guild
+      of client.guilds.cache.values()
+    ) {
+      await initializeData(
+        guild
+      );
 
-  for (const guild of client.guilds.cache.values()) {
-    await getOrCreateLogSystem(guild);
+      await getDataChannel(
+        guild
+      );
+
+      await getOrCreateLogSystem(
+        guild
+      );
+    }
+
+    await registerCommands();
+
+    console.log(
+      "💾 تم تحميل جميع البيانات من Discord"
+    );
+
+    console.log(
+      "📚 تم تجهيز نظام اللوقات"
+    );
+
+    console.log(
+      `🔐 روم البيانات: ${DATA_CHANNEL_NAME}`
+    );
   }
-
-  console.log(
-    "📚 تم تجهيز نظام اللوقات"
-  );
-});
+);
 
 // ==================================================
-// التفاعلات
+// INTERACTIONS
 // ==================================================
 
 client.on(
@@ -1556,7 +2231,9 @@ client.on(
         await channel.send({
           embeds: [
             new EmbedBuilder()
-              .setTitle("🎫 مرحبًا بك في تذكرتك")
+              .setTitle(
+                "🎫 مرحبًا بك في تذكرتك"
+              )
               .setDescription(
                 `أهلًا ${interaction.user}\n\nاختر نوع التكت المناسب لك.`
               )
@@ -1571,7 +2248,9 @@ client.on(
         await channel.send({
           embeds: [
             new EmbedBuilder()
-              .setTitle("🔒 إغلاق التذكرة")
+              .setTitle(
+                "🔒 إغلاق التذكرة"
+              )
               .setDescription(
                 "بعد الانتهاء اضغط على زر إغلاق التذكرة."
               )
@@ -1592,23 +2271,25 @@ client.on(
           ).addFields(
             {
               name: "👤 العضو",
-              value: `${interaction.user}`,
+              value:
+                `${interaction.user}`,
               inline: true
             },
             {
               name: "🔢 الرقم",
-              value: `${number}`,
+              value:
+                `${number}`,
               inline: true
             },
             {
               name: "📁 الروم",
-              value: `${channel}`,
+              value:
+                `${channel}`,
               inline: true
             }
           )
         );
 
-        // يرسل أيضًا للروم القديم إذا كان موجودًا
         const fixedLog =
           interaction.guild.channels.cache.get(
             FIXED_TICKET_LOG_ID
@@ -1626,13 +2307,15 @@ client.on(
               ).addFields(
                 {
                   name: "👤 العضو",
-                  value: `${interaction.user}`,
-                  inline: true
+                  value:
+                    `${interaction.user}`,
+                    inline: true
                 },
                 {
                   name: "📁 الروم",
-                  value: `${channel}`,
-                  inline: true
+                  value:
+                    `${channel}`,
+                    inline: true
                 }
               )
             ]
@@ -1655,10 +2338,12 @@ client.on(
           name: "شكوى",
           form: complaintForm()
         },
+
         "نوع_تذكرة_دعم": {
           name: "دعم فني",
           form: supportForm()
         },
+
         "نوع_تذكرة_شراكة": {
           name: "شراكة",
           form: partnershipForm()
@@ -1709,38 +2394,14 @@ client.on(
         });
 
         await interaction.channel.send({
-          content: type.form,
+          content:
+            type.form,
           allowedMentions: {
             roles: [
               TICKET_STAFF_ROLE_ID
             ]
           }
         });
-
-        await sendLog(
-          interaction.guild,
-          "tickets",
-          logEmbed(
-            "📌 تحديد نوع تذكرة",
-            "Blue"
-          ).addFields(
-            {
-              name: "👤 العضو",
-              value: `${interaction.user}`,
-              inline: true
-            },
-            {
-              name: "📌 النوع",
-              value: type.name,
-              inline: true
-            },
-            {
-              name: "📁 الروم",
-              value: `${interaction.channel}`,
-              inline: true
-            }
-          )
-        );
 
         return;
       }
@@ -1786,7 +2447,9 @@ client.on(
         await interaction.reply({
           embeds: [
             new EmbedBuilder()
-              .setTitle("🔒 إغلاق التذكرة")
+              .setTitle(
+                "🔒 إغلاق التذكرة"
+              )
               .setDescription(
                 "سيتم حذف التذكرة خلال **5 ثواني**."
               )
@@ -1803,29 +2466,34 @@ client.on(
           ).addFields(
             {
               name: "👤 صاحب التذكرة",
-              value: `<@${owner}>`,
+              value:
+                `<@${owner}>`,
               inline: true
             },
             {
               name: "🔢 الرقم",
-              value: number,
+              value:
+                number,
               inline: true
             },
             {
               name: "📌 النوع",
-              value: type,
+              value:
+                type,
               inline: true
             },
             {
               name: "👮 أغلقها",
-              value: `${interaction.user}`,
+              value:
+                `${interaction.user}`,
               inline: true
             }
           )
         );
 
         setTimeout(() => {
-          interaction.channel.delete()
+          interaction.channel
+            .delete()
             .catch(() => {});
         }, 5000);
 
@@ -1876,7 +2544,9 @@ client.on(
           );
 
         const data =
-          getApplications();
+          getApplications(
+            interaction.guild.id
+          );
 
         const record =
           data[
@@ -1897,20 +2567,22 @@ client.on(
         ) {
           return interaction.reply({
             content:
-              "❌ تم اتخاذ قرار على هذا التقديم مسبقًا.",
+              "❌ تم اتخاذ قرار مسبقًا.",
             ephemeral: true
           });
         }
 
         const member =
           await interaction.guild.members
-            .fetch(record.userId)
+            .fetch(
+              record.userId
+            )
             .catch(() => null);
 
         if (!member) {
           return interaction.reply({
             content:
-              "❌ العضو غير موجود في السيرفر.",
+              "❌ العضو غير موجود.",
             ephemeral: true
           });
         }
@@ -1920,40 +2592,24 @@ client.on(
             interaction.guild.id
           );
 
-        let added = false;
-        let removed = false;
-
-        try {
-          if (
-            config.removeRoleId
-          ) {
-            await member.roles.remove(
+        if (
+          config.removeRoleId
+        ) {
+          await member.roles
+            .remove(
               config.removeRoleId
-            ).catch(() => {});
+            )
+            .catch(() => {});
+        }
 
-            removed = true;
-          }
-
-          if (
-            config.acceptRoleId
-          ) {
-            await member.roles.add(
+        if (
+          config.acceptRoleId
+        ) {
+          await member.roles
+            .add(
               config.acceptRoleId
-            );
-
-            added = true;
-          }
-        } catch (error) {
-          console.error(
-            "Role error:",
-            error
-          );
-
-          return interaction.reply({
-            content:
-              "❌ ما قدرت أعدل الرتب. تأكد أن رتبة البوت أعلى من الرتب.",
-            ephemeral: true
-          });
+            )
+            .catch(() => {});
         }
 
         record.status =
@@ -1965,85 +2621,58 @@ client.on(
         record.reviewedAt =
           Date.now();
 
-        saveApplications(data);
+        saveApplications(
+          data,
+          interaction.guild.id
+        );
 
         const disabled =
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `accepted_${id}`
-              )
-              .setLabel("تم القبول")
-              .setEmoji("✅")
-              .setStyle(
-                ButtonStyle.Success
-              )
-              .setDisabled(true),
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `accepted_${id}`
+                )
+                .setLabel(
+                  "تم القبول"
+                )
+                .setEmoji("✅")
+                .setStyle(
+                  ButtonStyle.Success
+                )
+                .setDisabled(true),
 
-            new ButtonBuilder()
-              .setCustomId(
-                `rejected_${id}`
-              )
-              .setLabel("رفض")
-              .setEmoji("❌")
-              .setStyle(
-                ButtonStyle.Danger
-              )
-              .setDisabled(true)
-          );
+              new ButtonBuilder()
+                .setCustomId(
+                  `rejected_${id}`
+                )
+                .setLabel("رفض")
+                .setEmoji("❌")
+                .setStyle(
+                  ButtonStyle.Danger
+                )
+                .setDisabled(true)
+            );
 
-        await interaction.message.edit({
-          components: [disabled]
-        }).catch(() => {});
+        await interaction.message
+          .edit({
+            components: [
+              disabled
+            ]
+          })
+          .catch(() => {});
 
         await member.send(
           `🎉 **تم قبول تقديمك في ${interaction.guild.name}!**`
         ).catch(() => {});
 
-        await sendLog(
-          interaction.guild,
-          "applications",
-          logEmbed(
-            "✅ قبول تقديم",
-            "Green"
-          ).addFields(
-            {
-              name: "👤 المتقدم",
-              value: `<@${record.userId}>`,
-              inline: true
-            },
-            {
-              name: "🔢 رقم التقديم",
-              value: `#${id}`,
-              inline: true
-            },
-            {
-              name: "👮 الموافق",
-              value: `${interaction.user}`,
-              inline: true
-            },
-            {
-              name: "🟢 رتبة القبول",
-              value: added
-                ? "تمت الإضافة"
-                : "غير محددة",
-              inline: true
-            },
-            {
-              name: "🔴 رتبة الإزالة",
-              value: removed
-                ? "تمت الإزالة"
-                : "غير محددة",
-              inline: true
-            }
-          )
-        );
-
-        return interaction.reply({
+        await interaction.reply({
           content:
             `✅ تم قبول التقديم #${id}.`,
           ephemeral: true
         });
+
+        return;
       }
 
       // ==================================================
@@ -2077,7 +2706,9 @@ client.on(
           );
 
         const data =
-          getApplications();
+          getApplications(
+            interaction.guild.id
+          );
 
         const record =
           data[
@@ -2112,40 +2743,52 @@ client.on(
         record.reviewedAt =
           Date.now();
 
-        saveApplications(data);
+        saveApplications(
+          data,
+          interaction.guild.id
+        );
 
         const disabled =
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `accepted_${id}`
-              )
-              .setLabel("قبول")
-              .setEmoji("✅")
-              .setStyle(
-                ButtonStyle.Success
-              )
-              .setDisabled(true),
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `accepted_${id}`
+                )
+                .setLabel("قبول")
+                .setEmoji("✅")
+                .setStyle(
+                  ButtonStyle.Success
+                )
+                .setDisabled(true),
 
-            new ButtonBuilder()
-              .setCustomId(
-                `rejected_${id}`
-              )
-              .setLabel("تم الرفض")
-              .setEmoji("❌")
-              .setStyle(
-                ButtonStyle.Danger
-              )
-              .setDisabled(true)
-          );
+              new ButtonBuilder()
+                .setCustomId(
+                  `rejected_${id}`
+                )
+                .setLabel(
+                  "تم الرفض"
+                )
+                .setEmoji("❌")
+                .setStyle(
+                  ButtonStyle.Danger
+                )
+                .setDisabled(true)
+            );
 
-        await interaction.message.edit({
-          components: [disabled]
-        }).catch(() => {});
+        await interaction.message
+          .edit({
+            components: [
+              disabled
+            ]
+          })
+          .catch(() => {});
 
         const user =
           await client.users
-            .fetch(record.userId)
+            .fetch(
+              record.userId
+            )
             .catch(() => null);
 
         if (user) {
@@ -2153,31 +2796,6 @@ client.on(
             `❌ **تم رفض تقديمك في ${interaction.guild.name}.**`
           ).catch(() => {});
         }
-
-        await sendLog(
-          interaction.guild,
-          "applications",
-          logEmbed(
-            "❌ رفض تقديم",
-            "Red"
-          ).addFields(
-            {
-              name: "👤 المتقدم",
-              value: `<@${record.userId}>`,
-              inline: true
-            },
-            {
-              name: "🔢 رقم التقديم",
-              value: `#${id}`,
-              inline: true
-            },
-            {
-              name: "👮 الرافض",
-              value: `${interaction.user}`,
-              inline: true
-            }
-          )
-        );
 
         return interaction.reply({
           content:
@@ -2187,7 +2805,7 @@ client.on(
       }
 
       // ==================================================
-      // العدادات
+      // العداد
       // ==================================================
 
       if (
@@ -2202,7 +2820,9 @@ client.on(
           );
 
         const counters =
-          getCounters();
+          getCounters(
+            interaction.guild.id
+          );
 
         const counter =
           counters[id];
@@ -2237,23 +2857,27 @@ client.on(
 
         counter.count++;
 
-        saveCounters(counters);
+        saveCounters(
+          counters,
+          interaction.guild.id
+        );
 
         await interaction.update({
           components: [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId(
-                  `عداد_${id}`
-                )
-                .setLabel(
-                  `${counter.count}`
-                )
-                .setEmoji("🔢")
-                .setStyle(
-                  ButtonStyle.Primary
-                )
-            )
+            new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId(
+                    `عداد_${id}`
+                  )
+                  .setLabel(
+                    `${counter.count}`
+                  )
+                  .setEmoji("🔢")
+                  .setStyle(
+                    ButtonStyle.Primary
+                  )
+              )
           ]
         });
 
@@ -2262,7 +2886,7 @@ client.on(
     }
 
     // ==================================================
-    // السلاش
+    // أوامر السلاش
     // ==================================================
 
     if (
@@ -2305,7 +2929,9 @@ client.on(
           "الرتبة-الأساسية"
         );
 
-      if (main) roles.push(main);
+      if (main) {
+        roles.push(main);
+      }
 
       for (let i = 1; i <= 19; i++) {
         const role =
@@ -2313,7 +2939,9 @@ client.on(
             `رتبة-جانبية-${i}`
           );
 
-        if (role) roles.push(role);
+        if (role) {
+          roles.push(role);
+        }
       }
 
       let count = 0;
@@ -2326,35 +2954,11 @@ client.on(
           continue;
         }
 
-        await member.roles.add(role)
+        await member.roles
+          .add(role)
           .then(() => count++)
           .catch(() => {});
       }
-
-      await sendLog(
-        interaction.guild,
-        "roles",
-        logEmbed(
-          "🟢 إعطاء رتبة",
-          "Green"
-        ).addFields(
-          {
-            name: "👤 العضو",
-            value: `${member}`,
-            inline: true
-          },
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "🔢 عدد الرتب",
-            value: `${count}`,
-            inline: true
-          }
-        )
-      );
 
       return interaction.reply({
         content:
@@ -2397,7 +3001,9 @@ client.on(
           "الرتبة-الأساسية"
         );
 
-      if (main) roles.push(main);
+      if (main) {
+        roles.push(main);
+      }
 
       for (let i = 1; i <= 19; i++) {
         const role =
@@ -2405,7 +3011,9 @@ client.on(
             `رتبة-جانبية-${i}`
           );
 
-        if (role) roles.push(role);
+        if (role) {
+          roles.push(role);
+        }
       }
 
       let count = 0;
@@ -2426,35 +3034,11 @@ client.on(
           continue;
         }
 
-        await member.roles.remove(role)
+        await member.roles
+          .remove(role)
           .then(() => count++)
           .catch(() => {});
       }
-
-      await sendLog(
-        interaction.guild,
-        "roles",
-        logEmbed(
-          "🔴 إزالة رتبة",
-          "Red"
-        ).addFields(
-          {
-            name: "👤 العضو",
-            value: `${member}`,
-            inline: true
-          },
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "🔢 عدد الرتب",
-            value: `${count}`,
-            inline: true
-          }
-        )
-      );
 
       return interaction.reply({
         content:
@@ -2495,7 +3079,9 @@ client.on(
         "لم يتم تحديد سبب";
 
       const warnings =
-        getWarnings();
+        getWarnings(
+          interaction.guild.id
+        );
 
       if (
         !warnings[
@@ -2526,7 +3112,10 @@ client.on(
           interaction.guild.id
         ][user.id];
 
-      saveWarnings(warnings);
+      saveWarnings(
+        warnings,
+        interaction.guild.id
+      );
 
       await user.send({
         embeds: [
@@ -2549,36 +3138,6 @@ client.on(
             )
         ]
       }).catch(() => {});
-
-      await sendLog(
-        interaction.guild,
-        "moderation",
-        logEmbed(
-          "⚠️ تحذير عضو",
-          "Red"
-        ).addFields(
-          {
-            name: "👤 العضو",
-            value: `${user}`,
-            inline: true
-          },
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "📌 السبب",
-            value: reason,
-            inline: false
-          },
-          {
-            name: "🔢 التحذيرات",
-            value: `${count}`,
-            inline: true
-          }
-        )
-      );
 
       return interaction.reply({
         content:
@@ -2620,38 +3179,13 @@ client.on(
       let sent = 0;
 
       for (
-        const member of
-        role.members.values()
+        const member
+        of role.members.values()
       ) {
         await member.send(text)
           .then(() => sent++)
           .catch(() => {});
       }
-
-      await sendLog(
-        interaction.guild,
-        "messages",
-        logEmbed(
-          "📨 رسالة خاصة لرتبة",
-          "Blue"
-        ).addFields(
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "🏷️ الرتبة",
-            value: `${role}`,
-            inline: true
-          },
-          {
-            name: "📨 تم الإرسال",
-            value: `${sent}`,
-            inline: true
-          }
-        )
-      );
 
       return interaction.reply({
         content:
@@ -2709,26 +3243,6 @@ client.on(
         embeds: [embed]
       });
 
-      await sendLog(
-        interaction.guild,
-        "commands",
-        logEmbed(
-          "📤 إرسال ايمبد",
-          "Blue"
-        ).addFields(
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "📁 الروم",
-            value: `${channel}`,
-            inline: true
-          }
-        )
-      );
-
       return interaction.reply({
         content:
           "✅ تم إرسال الايمبد.",
@@ -2784,7 +3298,7 @@ client.on(
     }
 
     // ==================================================
-    // العداد
+    // زر عداد
     // ==================================================
 
     if (
@@ -2817,14 +3331,19 @@ client.on(
         `${interaction.guild.id}_${Date.now()}`;
 
       const counters =
-        getCounters();
+        getCounters(
+          interaction.guild.id
+        );
 
       counters[id] = {
         count: 0,
         users: []
       };
 
-      saveCounters(counters);
+      saveCounters(
+        counters,
+        interaction.guild.id
+      );
 
       await channel.send({
         embeds: [
@@ -2833,17 +3352,18 @@ client.on(
             .setColor("Blue")
         ],
         components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `عداد_${id}`
-              )
-              .setLabel("0")
-              .setEmoji("🔢")
-              .setStyle(
-                ButtonStyle.Primary
-              )
-          )
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `عداد_${id}`
+                )
+                .setLabel("0")
+                .setEmoji("🔢")
+                .setStyle(
+                  ButtonStyle.Primary
+                )
+            )
         ]
       });
 
@@ -2855,7 +3375,7 @@ client.on(
     }
 
     // ==================================================
-    // حذف الرسائل
+    // حذف رسائل
     // ==================================================
 
     if (
@@ -2887,7 +3407,10 @@ client.on(
 
       while (amount > 0) {
         const batch =
-          Math.min(amount, 100);
+          Math.min(
+            amount,
+            100
+          );
 
         const messages =
           await interaction.channel.bulkDelete(
@@ -2897,8 +3420,11 @@ client.on(
 
         if (!messages) break;
 
-        deleted += messages.size;
-        amount -= messages.size;
+        deleted +=
+          messages.size;
+
+        amount -=
+          messages.size;
 
         if (
           messages.size < batch
@@ -2907,38 +3433,13 @@ client.on(
         }
       }
 
-      await sendLog(
-        interaction.guild,
-        "messages",
-        logEmbed(
-          "🗑️ حذف رسائل",
-          "Red"
-        ).addFields(
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "📁 الروم",
-            value: `${interaction.channel}`,
-            inline: true
-          },
-          {
-            name: "🗑️ العدد",
-            value: `${deleted}`,
-            inline: true
-          }
-        )
-      );
-
       return interaction.editReply(
         `✅ تم حذف **${deleted}** رسالة.`
       );
     }
 
     // ==================================================
-    // الردود
+    // إضافة رد
     // ==================================================
 
     if (
@@ -2958,9 +3459,11 @@ client.on(
       }
 
       const word =
-        interaction.options.getString(
-          "الكلمة"
-        ).toLowerCase();
+        interaction.options
+          .getString(
+            "الكلمة"
+          )
+          .toLowerCase();
 
       const reply =
         interaction.options.getString(
@@ -2968,18 +3471,28 @@ client.on(
         );
 
       const data =
-        getAutoReplies();
+        getAutoReplies(
+          interaction.guild.id
+        );
 
-      data[word] = reply;
+      data[word] =
+        reply;
 
-      saveAutoReplies(data);
+      saveAutoReplies(
+        data,
+        interaction.guild.id
+      );
 
       return interaction.reply({
         content:
-          `✅ تم إضافة الرد للكلمة **${word}**`,
+          `✅ تم إضافة الرد للكلمة **${word}** وحفظه.`,
         ephemeral: true
       });
     }
+
+    // ==================================================
+    // تعديل رد
+    // ==================================================
 
     if (
       interaction.commandName ===
@@ -2998,9 +3511,11 @@ client.on(
       }
 
       const word =
-        interaction.options.getString(
-          "الكلمة"
-        ).toLowerCase();
+        interaction.options
+          .getString(
+            "الكلمة"
+          )
+          .toLowerCase();
 
       const reply =
         interaction.options.getString(
@@ -3008,7 +3523,9 @@ client.on(
         );
 
       const data =
-        getAutoReplies();
+        getAutoReplies(
+          interaction.guild.id
+        );
 
       if (!data[word]) {
         return interaction.reply({
@@ -3018,16 +3535,24 @@ client.on(
         });
       }
 
-      data[word] = reply;
+      data[word] =
+        reply;
 
-      saveAutoReplies(data);
+      saveAutoReplies(
+        data,
+        interaction.guild.id
+      );
 
       return interaction.reply({
         content:
-          "✅ تم تعديل الرد.",
+          "✅ تم تعديل الرد وحفظه.",
         ephemeral: true
       });
     }
+
+    // ==================================================
+    // حذف رد
+    // ==================================================
 
     if (
       interaction.commandName ===
@@ -3046,12 +3571,16 @@ client.on(
       }
 
       const word =
-        interaction.options.getString(
-          "الكلمة"
-        ).toLowerCase();
+        interaction.options
+          .getString(
+            "الكلمة"
+          )
+          .toLowerCase();
 
       const data =
-        getAutoReplies();
+        getAutoReplies(
+          interaction.guild.id
+        );
 
       if (!data[word]) {
         return interaction.reply({
@@ -3063,14 +3592,21 @@ client.on(
 
       delete data[word];
 
-      saveAutoReplies(data);
+      saveAutoReplies(
+        data,
+        interaction.guild.id
+      );
 
       return interaction.reply({
         content:
-          "✅ تم حذف الرد.",
+          "✅ تم حذف الرد وحفظ التعديل.",
         ephemeral: true
       });
     }
+
+    // ==================================================
+    // قائمة الردود
+    // ==================================================
 
     if (
       interaction.commandName ===
@@ -3089,7 +3625,9 @@ client.on(
       }
 
       const data =
-        getAutoReplies();
+        getAutoReplies(
+          interaction.guild.id
+        );
 
       const keys =
         Object.keys(data);
@@ -3111,18 +3649,25 @@ client.on(
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("📋 الردود")
-            .setDescription(
-              truncate(text, 4000)
+            .setTitle(
+              "📋 الردود"
             )
-            .setColor("Blue")
+            .setDescription(
+              truncate(
+                text,
+                4000
+              )
+            )
+            .setColor(
+              "Blue"
+            )
         ],
         ephemeral: true
       });
     }
 
     // ==================================================
-    // المستويات
+    // مستواي
     // ==================================================
 
     if (
@@ -3136,7 +3681,9 @@ client.on(
         interaction.user;
 
       const levels =
-        getLevels();
+        getLevels(
+          interaction.guild.id
+        );
 
       const data =
         levels[
@@ -3149,7 +3696,9 @@ client.on(
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("📊 مستوى العضو")
+            .setTitle(
+              "📊 مستوى العضو"
+            )
             .setDescription(
               `${user}\n\n🏆 المستوى: **${data.level}**\n⭐ XP: **${data.xp}**`
             )
@@ -3158,17 +3707,25 @@ client.on(
                 dynamic: true
               })
             )
-            .setColor("Gold")
+            .setColor(
+              "Gold"
+            )
         ]
       });
     }
+
+    // ==================================================
+    // المتصدرين
+    // ==================================================
 
     if (
       interaction.commandName ===
       "المتصدرين"
     ) {
       const levels =
-        getLevels();
+        getLevels(
+          interaction.guild.id
+        );
 
       const data =
         levels[
@@ -3179,8 +3736,14 @@ client.on(
         Object.entries(data)
           .sort(
             (a, b) =>
-              (b[1].level * 100 + b[1].xp) -
-              (a[1].level * 100 + a[1].xp)
+              (
+                b[1].level * 100 +
+                b[1].xp
+              ) -
+              (
+                a[1].level * 100 +
+                a[1].xp
+              )
           )
           .slice(0, 10);
 
@@ -3199,12 +3762,22 @@ client.on(
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
-            .setTitle("🏆 المتصدرين")
-            .setDescription(text)
-            .setColor("Gold")
+            .setTitle(
+              "🏆 المتصدرين"
+            )
+            .setDescription(
+              text
+            )
+            .setColor(
+              "Gold"
+            )
         ]
       });
     }
+
+    // ==================================================
+    // تعديل مستوى
+    // ==================================================
 
     if (
       interaction.commandName ===
@@ -3238,7 +3811,9 @@ client.on(
         ) || 0;
 
       const data =
-        getLevels();
+        getLevels(
+          interaction.guild.id
+        );
 
       if (
         !data[
@@ -3257,11 +3832,14 @@ client.on(
         xp
       };
 
-      saveLevels(data);
+      saveLevels(
+        data,
+        interaction.guild.id
+      );
 
       return interaction.reply({
         content:
-          `✅ تم تعديل مستوى ${user}.`,
+          `✅ تم تعديل مستوى ${user} وحفظه.`,
         ephemeral: true
       });
     }
@@ -3292,17 +3870,23 @@ client.on(
         );
 
       const data =
-        getLevelUpChannels();
+        getLevelUpChannels(
+          interaction.guild.id
+        );
 
       data[
         interaction.guild.id
-      ] = channel.id;
+      ] =
+        channel.id;
 
-      saveLevelUpChannels(data);
+      saveLevelUpChannels(
+        data,
+        interaction.guild.id
+      );
 
       return interaction.reply({
         content:
-          `✅ تم تحديد ${channel}.`,
+          `✅ تم تحديد ${channel} وحفظ الإعداد.`,
         ephemeral: true
       });
     }
@@ -3335,24 +3919,31 @@ client.on(
       await channel.send({
         embeds: [
           new EmbedBuilder()
-            .setTitle("🎫 نظام التذاكر")
+            .setTitle(
+              "🎫 نظام التذاكر"
+            )
             .setDescription(
               "اضغط على الزر بالأسفل لفتح تذكرة."
             )
-            .setColor("Blue")
+            .setColor(
+              "Blue"
+            )
         ],
         components: [
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                "فتح_تذكرة"
-              )
-              .setLabel("فتح تذكرة")
-              .setEmoji("🎫")
-              .setStyle(
-                ButtonStyle.Primary
-              )
-          )
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  "فتح_تذكرة"
+                )
+                .setLabel(
+                  "فتح تذكرة"
+                )
+                .setEmoji("🎫")
+                .setStyle(
+                  ButtonStyle.Primary
+                )
+            )
         ]
       });
 
@@ -3423,10 +4014,12 @@ client.on(
         reviewChannel.id;
 
       config.acceptRoleId =
-        acceptRole?.id || null;
+        acceptRole?.id ||
+        null;
 
       config.removeRoleId =
-        removeRole?.id || null;
+        removeRole?.id ||
+        null;
 
       if (color) {
         config.color =
@@ -3442,7 +4035,8 @@ client.on(
         if (question !== null) {
           config[
             `question${i}`
-          ] = question;
+          ] =
+            question;
         }
       }
 
@@ -3451,66 +4045,15 @@ client.on(
         config
       );
 
-      // ينشئ كل اللوقات تلقائيًا
-      await getOrCreateLogSystem(
-        interaction.guild
-      );
-
-      // إرسال اللوحة
       await applicationChannel.send(
-        buildApplicationPanel(config)
-      );
-
-      await sendLog(
-        interaction.guild,
-        "admin",
-        logEmbed(
-          "⚙️ تسطيب نظام التقديم",
-          "Blue"
-        ).addFields(
-          {
-            name: "👮 بواسطة",
-            value: `${interaction.user}`,
-            inline: true
-          },
-          {
-            name: "📋 روم التقديم",
-            value: `${applicationChannel}`,
-            inline: true
-          },
-          {
-            name: "📥 روم المراجعة",
-            value: `${reviewChannel}`,
-            inline: true
-          },
-          {
-            name: "🟢 رتبة القبول",
-            value:
-              acceptRole
-                ? `${acceptRole}`
-                : "غير محددة",
-            inline: true
-          },
-          {
-            name: "🔴 رتبة الإزالة",
-            value:
-              removeRole
-                ? `${removeRole}`
-                : "غير محددة",
-            inline: true
-          }
+        buildApplicationPanel(
+          config
         )
       );
 
       return interaction.reply({
         content:
-          "✅ تم تسطيب نظام التقديم.\n\n" +
-          `📋 التقديم: ${applicationChannel}\n` +
-          `📥 المراجعة: ${reviewChannel}\n` +
-          `🟢 القبول: ${acceptRole || "غير محدد"}\n` +
-          `🔴 الإزالة: ${removeRole || "غير محددة"}\n\n` +
-          "📝 الأسئلة التي لم تضعها تم تجاهلها.\n" +
-          "📚 تم تجهيز نظام اللوقات تلقائيًا.",
+          "✅ تم تسطيب نظام التقديم وحفظ جميع إعداداته.",
         ephemeral: true
       });
     }
@@ -3546,7 +4089,7 @@ client.on(
       if (!config) {
         return interaction.reply({
           content:
-            "❌ سطّب نظام التقديم أولًا باستخدام `/تسطيب-تقديم`.",
+            "❌ سطّب نظام التقديم أولًا.",
           ephemeral: true
         });
       }
@@ -3572,7 +4115,8 @@ client.on(
         );
 
       if (title !== null) {
-        config.title = title;
+        config.title =
+          title;
       }
 
       if (description !== null) {
@@ -3609,24 +4153,14 @@ client.on(
       }
 
       await channel.send(
-        buildApplicationPanel(config)
-      );
-
-      await sendLog(
-        interaction.guild,
-        "admin",
-        logEmbed(
-          "✏️ تعديل لوحة التقديم",
-          "Blue"
-        ).addFields({
-          name: "👮 بواسطة",
-          value: `${interaction.user}`
-        })
+        buildApplicationPanel(
+          config
+        )
       );
 
       return interaction.reply({
         content:
-          "✅ تم تعديل رسالة التقديم وإرسال اللوحة الجديدة.",
+          "✅ تم تعديل وحفظ إعدادات التقديم.",
         ephemeral: true
       });
     }
@@ -3678,7 +4212,9 @@ client.on(
       }
 
       await channel.send(
-        buildApplicationPanel(config)
+        buildApplicationPanel(
+          config
+        )
       );
 
       return interaction.reply({
@@ -3691,10 +4227,11 @@ client.on(
 );
 
 // ==================================================
-// XP + الردود
+// XP + الردود التلقائية
 // ==================================================
 
-const xpCooldown = new Map();
+const xpCooldown =
+  new Map();
 
 client.on(
   "messageCreate",
@@ -3706,16 +4243,21 @@ client.on(
       return;
     }
 
-    // الردود
+    // ==================================================
+    // الردود التلقائية
+    // ==================================================
+
     const replies =
-      getAutoReplies();
+      getAutoReplies(
+        message.guild.id
+      );
 
     const content =
       message.content.toLowerCase();
 
     for (
-      const word of
-      Object.keys(replies)
+      const word
+      of Object.keys(replies)
     ) {
       if (
         content.includes(
@@ -3723,13 +4265,18 @@ client.on(
         )
       ) {
         await message.reply({
-          content: replies[word]
+          content:
+            replies[word]
         }).catch(() => {});
+
         break;
       }
     }
 
+    // ==================================================
     // XP
+    // ==================================================
+
     const key =
       `${message.guild.id}_${message.author.id}`;
 
@@ -3737,7 +4284,8 @@ client.on(
       Date.now();
 
     const last =
-      xpCooldown.get(key) || 0;
+      xpCooldown.get(key) ||
+      0;
 
     if (
       now - last <
@@ -3752,7 +4300,9 @@ client.on(
     );
 
     const levels =
-      getLevels();
+      getLevels(
+        message.guild.id
+      );
 
     if (
       !levels[
@@ -3800,14 +4350,19 @@ client.on(
       data.level++;
     }
 
-    saveLevels(levels);
+    saveLevels(
+      levels,
+      message.guild.id
+    );
 
     if (
       data.level >
       oldLevel
     ) {
       const channels =
-        getLevelUpChannels();
+        getLevelUpChannels(
+          message.guild.id
+        );
 
       const channel =
         message.guild.channels.cache.get(
@@ -3831,7 +4386,9 @@ client.on(
                   dynamic: true
                 })
               )
-              .setColor("Gold")
+              .setColor(
+                "Gold"
+              )
           ]
         }).catch(() => {});
       }
@@ -3840,7 +4397,7 @@ client.on(
 );
 
 // ==================================================
-// لوقات الأعضاء
+// لوق الأعضاء
 // ==================================================
 
 client.on(
@@ -3855,17 +4412,20 @@ client.on(
       ).addFields(
         {
           name: "👤 العضو",
-          value: `${member}`,
+          value:
+            `${member}`,
           inline: true
         },
         {
           name: "🆔 الآيدي",
-          value: member.id,
+          value:
+            member.id,
           inline: true
         },
         {
           name: "👥 الأعضاء",
-          value: `${member.guild.memberCount}`,
+          value:
+            `${member.guild.memberCount}`,
           inline: true
         }
       )
@@ -3891,7 +4451,8 @@ client.on(
         },
         {
           name: "🆔 الآيدي",
-          value: member.id,
+          value:
+            member.id,
           inline: true
         }
       )
@@ -3900,12 +4461,15 @@ client.on(
 );
 
 // ==================================================
-// لوقات الرتب
+// لوق الرتب
 // ==================================================
 
 client.on(
   "guildMemberUpdate",
-  async (oldMember, newMember) => {
+  async (
+    oldMember,
+    newMember
+  ) => {
     const oldRoles =
       oldMember.roles.cache;
 
@@ -3915,13 +4479,17 @@ client.on(
     const added =
       newRoles.filter(
         role =>
-          !oldRoles.has(role.id)
+          !oldRoles.has(
+            role.id
+          )
       );
 
     const removed =
       oldRoles.filter(
         role =>
-          !newRoles.has(role.id)
+          !newRoles.has(
+            role.id
+          )
       );
 
     if (
@@ -3932,28 +4500,32 @@ client.on(
         logEmbed(
           "🏷️ تغيير رتب عضو",
           "Blue"
-        )
-          .addFields({
-            name: "👤 العضو",
-            value: `${newMember}`,
-            inline: true
-          });
+        ).addFields({
+          name: "👤 العضو",
+          value:
+            `${newMember}`,
+          inline: true
+        });
 
       if (added.size) {
         embed.addFields({
-          name: "🟢 تمت الإضافة",
+          name:
+            "🟢 تمت الإضافة",
           value:
-            added.map(r => `${r}`).join(", ") ||
-            "لا يوجد"
+            added.map(
+              r => `${r}`
+            ).join(", ")
         });
       }
 
       if (removed.size) {
         embed.addFields({
-          name: "🔴 تمت الإزالة",
+          name:
+            "🔴 تمت الإزالة",
           value:
-            removed.map(r => `${r}`).join(", ") ||
-            "لا يوجد"
+            removed.map(
+              r => `${r}`
+            ).join(", ")
         });
       }
 
@@ -3973,7 +4545,17 @@ client.on(
 client.on(
   "channelCreate",
   async channel => {
-    if (!channel.guild) return;
+    if (!channel.guild) {
+      return;
+    }
+
+    // روم البيانات لا نحتاج نسجل رسائله
+    if (
+      channel.name ===
+      DATA_CHANNEL_NAME
+    ) {
+      return;
+    }
 
     await sendLog(
       channel.guild,
@@ -3984,12 +4566,14 @@ client.on(
       ).addFields(
         {
           name: "📁 الروم",
-          value: `${channel}`,
+          value:
+            `${channel}`,
           inline: true
         },
         {
           name: "🆔 الآيدي",
-          value: channel.id,
+          value:
+            channel.id,
           inline: true
         }
       )
@@ -4000,7 +4584,9 @@ client.on(
 client.on(
   "channelDelete",
   async channel => {
-    if (!channel.guild) return;
+    if (!channel.guild) {
+      return;
+    }
 
     await sendLog(
       channel.guild,
@@ -4011,12 +4597,15 @@ client.on(
       ).addFields(
         {
           name: "📁 الاسم",
-          value: channel.name || "غير معروف",
+          value:
+            channel.name ||
+            "غير معروف",
           inline: true
         },
         {
           name: "🆔 الآيدي",
-          value: channel.id,
+          value:
+            channel.id,
           inline: true
         }
       )
@@ -4073,7 +4662,10 @@ client.on(
 
 client.on(
   "messageUpdate",
-  async (oldMessage, newMessage) => {
+  async (
+    oldMessage,
+    newMessage
+  ) => {
     if (
       !oldMessage.guild ||
       oldMessage.author?.bot
@@ -4134,7 +4726,10 @@ client.on(
 
 client.on(
   "voiceStateUpdate",
-  async (oldState, newState) => {
+  async (
+    oldState,
+    newState
+  ) => {
     if (
       oldState.channelId ===
       newState.channelId
@@ -4142,20 +4737,23 @@ client.on(
       return;
     }
 
-    let action = "🔊 تغيير الصوت";
+    let action =
+      "🔊 تغيير الصوت";
 
     if (
       !oldState.channelId &&
       newState.channelId
     ) {
-      action = "📥 دخول صوتي";
+      action =
+        "📥 دخول صوتي";
     }
 
     if (
       oldState.channelId &&
       !newState.channelId
     ) {
-      action = "📤 خروج صوتي";
+      action =
+        "📤 خروج صوتي";
     }
 
     await sendLog(
@@ -4167,7 +4765,8 @@ client.on(
       ).addFields(
         {
           name: "👤 العضو",
-          value: `${newState.member}`,
+          value:
+            `${newState.member}`,
           inline: true
         },
         {
@@ -4192,7 +4791,7 @@ client.on(
 );
 
 // ==================================================
-// البان والكيك
+// البان
 // ==================================================
 
 client.on(
@@ -4222,6 +4821,10 @@ client.on(
   }
 );
 
+// ==================================================
+// فك البان
+// ==================================================
+
 client.on(
   "guildBanRemove",
   async ban => {
@@ -4250,7 +4853,7 @@ client.on(
 );
 
 // ==================================================
-// دخول البوت
+// تشغيل البوت
 // ==================================================
 
 client.login(TOKEN);
