@@ -4397,12 +4397,19 @@ client.on(
 );
 
 // ==================================================
-// لوق الأعضاء
+// لوق الأعضاء + نظام الترحيب
 // ==================================================
+
+const WELCOME_CHANNEL_ID = "1441193478439829576";
 
 client.on(
   "guildMemberAdd",
   async member => {
+
+    // ==================================================
+    // لوق دخول العضو
+    // ==================================================
+
     await sendLog(
       member.guild,
       "members",
@@ -4412,24 +4419,78 @@ client.on(
       ).addFields(
         {
           name: "👤 العضو",
-          value:
-            `${member}`,
+          value: `${member}`,
           inline: true
         },
         {
           name: "🆔 الآيدي",
-          value:
-            member.id,
+          value: member.id,
           inline: true
         },
         {
           name: "👥 الأعضاء",
-          value:
-            `${member.guild.memberCount}`,
+          value: `${member.guild.memberCount}`,
           inline: true
         }
       )
     );
+
+    // ==================================================
+    // رسالة الترحيب
+    // ==================================================
+
+    const welcomeChannel =
+      member.guild.channels.cache.get(
+        WELCOME_CHANNEL_ID
+      );
+
+    if (
+      !welcomeChannel ||
+      !welcomeChannel.isTextBased()
+    ) {
+      console.error(
+        `❌ روم الترحيب غير موجود: ${WELCOME_CHANNEL_ID}`
+      );
+      return;
+    }
+
+    const memberCount =
+      member.guild.memberCount;
+
+    const welcomeMessage = `**__
+- منور يـ ${member} الشخص إيدن سيتي || AEDN CITY
+
+- <a:ie_crown_gold:1538378955252563989> جيت عند السيرفر الصح رولات يوميه فعاليات قيف اواي اسبوعي على كريدت
+
+- 👥 عددنا معك صار **${memberCount}**
+
+- تبي تفعل نفسك ومب عارف كيف تخش رولاتنا توجه رومـ <#1441468014263533650> وانتهي من المطلوب وخش واستمتع
+
+- فعلت نفسك وانتهيت بتستانس معنا فالرولات والفعاليات <a:East3:1539297781540454410>
+
+- لاتنسى تشيك الرومات هاذي عشان ماتاخذ عقوبه وانت ماتعرف عنها
+<#1528891597968769166>
+<#1458140662473163031>
+
+- النهايه ، إدارة إيدن سيتي نسعى لخدمتك وراحتك في السيرفر <a:19:1539300660904988753>
+
+..
+
+discord.gg/an7
+
+__**`;
+
+    await welcomeChannel.send({
+      content: welcomeMessage,
+      allowedMentions: {
+        users: [member.id]
+      }
+    }).catch(error => {
+      console.error(
+        "❌ خطأ إرسال رسالة الترحيب:",
+        error.message
+      );
+    });
   }
 );
 
