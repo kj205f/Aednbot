@@ -4441,7 +4441,7 @@ client.on(
 
     const welcomeChannel =
       member.guild.channels.cache.get(
-        WELCOME_CHANNEL_ID
+        1441193478439829576
       );
 
     if (
